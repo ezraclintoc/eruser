@@ -9,10 +9,12 @@ use chrono::{DateTime, Utc};
 pub mod classifier;
 pub mod monitor;
 pub mod parser;
+pub mod scan;
 
 pub use classifier::{ClassifiedResponse, ResponseType, classify, classify_by_subject};
 pub use monitor::Monitor;
 pub use parser::ExtractedUrls;
+pub use scan::{ScanOptions, ScanSummary, scan};
 
 /// One message fetched from the mailbox.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -186,11 +186,9 @@ pub fn router(state: AppState) -> Router {
         .route("/pipeline/stats", get(handlers::api::pipeline_stats))
         .route("/pipeline/responses", get(handlers::api::responses))
         .route("/pipeline/tasks", get(handlers::api::tasks))
-        // Reading a mailbox is phase two; these answer plainly rather than
-        // failing in a way the page cannot explain.
-        .route("/inbox/scan", post(handlers::api::inbox_not_ported))
-        .route("/inbox/rescan", post(handlers::api::inbox_not_ported))
-        .route("/inbox/reclassify", post(handlers::api::inbox_not_ported));
+        .route("/inbox/scan", post(handlers::api::inbox_scan))
+        .route("/inbox/rescan", post(handlers::api::inbox_rescan))
+        .route("/inbox/reclassify", post(handlers::api::inbox_reclassify));
 
     Router::new()
         .merge(pages)

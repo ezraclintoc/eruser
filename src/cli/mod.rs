@@ -15,6 +15,7 @@ use crate::config::{self, Config};
 pub(crate) mod add_broker;
 pub(crate) mod init;
 pub(crate) mod list_brokers;
+pub(crate) mod monitor;
 mod prompt;
 pub(crate) mod send;
 pub(crate) mod serve;
@@ -64,6 +65,9 @@ pub enum Command {
     /// Add a broker to the database
     AddBroker,
 
+    /// Read the mailbox and sort what brokers sent back
+    Monitor(monitor::Args),
+
     /// Start the local web interface
     Serve(serve::Args),
 }
@@ -81,6 +85,7 @@ impl Cli {
             Command::ListBrokers(args) => list_brokers::run(&paths, args),
             Command::Status(args) => status::run(&paths, args).await,
             Command::AddBroker => add_broker::run(&paths),
+            Command::Monitor(args) => monitor::run(&paths, args).await,
             Command::Serve(args) => serve::run(&paths, args).await,
         }
     }
@@ -170,6 +175,9 @@ pub enum Error {
 
     #[error(transparent)]
     Serve(#[from] ServeError),
+
+    #[error(transparent)]
+    Inbox(#[from] crate::inbox::scan::Error),
 
     #[error("could not read from the terminal")]
     Input(#[from] std::io::Error),

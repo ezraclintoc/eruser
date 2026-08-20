@@ -521,10 +521,10 @@ async fn the_active_job_endpoint_reports_when_nothing_is_running() {
     assert_eq!(json["active"], false);
 }
 
-/// The buttons for this exist in the UI already; they should say what is
-/// going on rather than failing in a way the page cannot explain.
+/// Scanning needs somewhere to scan. The message should name the missing
+/// setting rather than failing as an unexplained server error.
 #[tokio::test]
-async fn the_inbox_endpoints_say_they_are_not_ported_yet() {
+async fn scanning_without_inbox_settings_explains_what_is_missing() {
     let (app, _state, _dir) = app().await;
     let (cookie, token) = csrf_pair(&app).await;
 
@@ -542,8 +542,60 @@ async fn the_inbox_endpoints_say_they_are_not_ported_yet() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
-    assert!(body_of(response).await.contains("not ported yet"));
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_of(response).await.contains("inbox"));
+}
+
+/// Re-reading stored replies fetches nothing, so it works with no mailbox
+/// settings at all — which is the point, since it is what you reach for after
+/// the mailbox has been cleared.
+#[tokio::test]
+async fn stored_replies_can_be_reclassified_without_a_mailbox() {
+    let (app, state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+
+    state
+        .store
+        .upsert_broker_response(&crate::history::NewBrokerResponse {
+            broker_id: "acme".into(),
+            broker_name: "Broker acme".into(),
+            response_type: crate::history::ResponseType::Unknown,
+            email_subject: "Your Request Has Been Received".into(),
+            needs_review: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/api/inbox/reclassify")
+                .header(header::COOKIE, cookie)
+                .header(CSRF_HEADER, token)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = serde_json::from_str(&body_of(response).await).unwrap();
+    assert_eq!(json["reclassified"], 1);
+
+    let stored = state
+        .store
+        .find_response_by_subject(
+            crate::history::DEFAULT_USER_ID,
+            "acme",
+            "Your Request Has Been Received",
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.response_type, crate::history::ResponseType::Pending);
 }
 
 /// Two runs would both count against the same daily limit and interleave

@@ -390,17 +390,64 @@ pub async fn tasks(State(state): State<AppState>) -> Result<Response, WebError> 
     .into_response())
 }
 
-/// Reading a mailbox is not ported yet. These endpoints exist so the UI's
-/// buttons give a straight answer instead of failing silently.
-pub async fn inbox_not_ported() -> Response {
-    (
-        axum::http::StatusCode::NOT_IMPLEMENTED,
-        Json(json!({
-            "error": "Reading broker replies is not ported yet. \
-                      It is the next thing being worked on."
-        })),
-    )
-        .into_response()
+/// Read the mailbox and file whatever brokers have sent back.
+pub async fn inbox_scan(State(state): State<AppState>) -> Result<Response, WebError> {
+    let config = state.config().ok_or(WebError::NotConfigured)?;
+    config
+        .validate_inbox()
+        .map_err(|problem| WebError::BadRequest(problem.to_string()))?;
+
+    let mut monitor = crate::inbox::Monitor::new(config.inbox.clone(), &state.brokers.brokers);
+    let options = crate::inbox::ScanOptions {
+        user_id: state.user_id,
+        ..Default::default()
+    };
+
+    // The scan runs inline rather than as a background job: a week of mail is
+    // a handful of seconds, and a job would need its own progress plumbing
+    // for no gain.
+    let summary = crate::inbox::scan(&mut monitor, &state.store, &options, |_| {})
+        .await
+        .map_err(WebError::Inbox)?;
+
+    Ok(Json(json!({
+        "fetched": summary.fetched,
+        "matched": summary.matched,
+        "stored": summary.stored,
+        "bounced": summary.bounced,
+        "needs_review": summary.by_type.needs_review,
+        "waiting_on_you": summary.by_type.form_required + summary.by_type.confirmation_required,
+    }))
+    .into_response())
+}
+
+/// Re-read every stored reply with the current patterns.
+///
+/// Useful after the classifier changes: replies whose bodies were kept are
+/// re-read in full, and the rest fall back to their subject lines. No mail is
+/// fetched, so this works even after the mailbox has been cleared.
+pub async fn inbox_reclassify(State(state): State<AppState>) -> Result<Response, WebError> {
+    let changed = crate::inbox::scan::reclassify_stored(&state.store, state.user_id)
+        .await
+        .map_err(WebError::Inbox)?;
+
+    Ok(Json(json!({ "reclassified": changed })).into_response())
+}
+
+/// Forget every stored reply, then read the mailbox again from scratch.
+pub async fn inbox_rescan(State(state): State<AppState>) -> Result<Response, WebError> {
+    let cleared = state.store.clear_broker_responses(state.user_id).await?;
+    let mut response = inbox_scan(State(state)).await?;
+
+    // Report what was discarded alongside what came back.
+    response.headers_mut().insert(
+        "x-cleared",
+        cleared
+            .to_string()
+            .parse()
+            .unwrap_or_else(|_| "0".parse().expect("a valid header")),
+    );
+    Ok(response)
 }
 
 /// The user a request acts as. One user until authentication lands, but

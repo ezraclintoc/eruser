@@ -44,6 +44,9 @@ pub enum WebError {
 
     #[error("failed to save the pending job")]
     Job(#[from] super::job::Error),
+
+    #[error("could not read the mailbox")]
+    Inbox(#[from] crate::inbox::scan::Error),
 }
 
 impl WebError {
