@@ -1,31 +1,31 @@
-To Whom It May Concern at {{.BrokerName}},
+To Whom It May Concern at {{ broker_name }},
 
 I am writing to exercise my right to erasure under Article 17 of the General Data Protection Regulation (GDPR). I request that you delete all personal data you hold about me.
 
 PERSONAL IDENTIFICATION:
-- Full Name: {{.FullName}}
-- Email Address: {{.Email}}
-{{- if .Address}}
-- Address: {{.Address}}
-{{- end}}
-{{- if .City}}
-- City: {{.City}}
-{{- end}}
-{{- if .State}}
-- State/Province: {{.State}}
-{{- end}}
-{{- if .ZipCode}}
-- Postal Code: {{.ZipCode}}
-{{- end}}
-{{- if .Country}}
-- Country: {{.Country}}
-{{- end}}
-{{- if .Phone}}
-- Phone: {{.Phone}}
-{{- end}}
-{{- if .DateOfBirth}}
-- Date of Birth: {{.DateOfBirth}}
-{{- end}}
+- Full Name: {{ full_name }}
+- Email Address: {{ email }}
+{%- if address %}
+- Address: {{ address }}
+{%- endif %}
+{%- if city %}
+- City: {{ city }}
+{%- endif %}
+{%- if state %}
+- State/Province: {{ state }}
+{%- endif %}
+{%- if zip_code %}
+- Postal Code: {{ zip_code }}
+{%- endif %}
+{%- if country %}
+- Country: {{ country }}
+{%- endif %}
+{%- if phone %}
+- Phone: {{ phone }}
+{%- endif %}
+{%- if date_of_birth %}
+- Date of Birth: {{ date_of_birth }}
+{%- endif %}
 
 LEGAL BASIS:
 Under Article 17 of the GDPR, I have the right to obtain the erasure of personal data concerning me without undue delay where:
@@ -41,10 +41,10 @@ REQUEST:
 
 Please note that under Article 12 of the GDPR, you are required to respond to this request within one month. Failure to comply may result in a complaint to the relevant supervisory authority.
 
-If you require any additional information to verify my identity or locate my records, please contact me at {{.Email}}.
+If you require any additional information to verify my identity or locate my records, please contact me at {{ email }}.
 
 Thank you for your prompt attention to this matter.
 
 Sincerely,
-{{.FullName}}
-{{.Date}}
+{{ full_name }}
+{{ date }}

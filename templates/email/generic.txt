@@ -1,31 +1,31 @@
-To Whom It May Concern at {{.BrokerName}},
+To Whom It May Concern at {{ broker_name }},
 
 I am writing to request the removal of my personal information from your database and any associated services.
 
 PERSONAL IDENTIFICATION:
-- Full Name: {{.FullName}}
-- Email Address: {{.Email}}
-{{- if .Address}}
-- Address: {{.Address}}
-{{- end}}
-{{- if .City}}
-- City: {{.City}}
-{{- end}}
-{{- if .State}}
-- State/Province: {{.State}}
-{{- end}}
-{{- if .ZipCode}}
-- Postal Code: {{.ZipCode}}
-{{- end}}
-{{- if .Country}}
-- Country: {{.Country}}
-{{- end}}
-{{- if .Phone}}
-- Phone: {{.Phone}}
-{{- end}}
-{{- if .DateOfBirth}}
-- Date of Birth: {{.DateOfBirth}}
-{{- end}}
+- Full Name: {{ full_name }}
+- Email Address: {{ email }}
+{%- if address %}
+- Address: {{ address }}
+{%- endif %}
+{%- if city %}
+- City: {{ city }}
+{%- endif %}
+{%- if state %}
+- State/Province: {{ state }}
+{%- endif %}
+{%- if zip_code %}
+- Postal Code: {{ zip_code }}
+{%- endif %}
+{%- if country %}
+- Country: {{ country }}
+{%- endif %}
+{%- if phone %}
+- Phone: {{ phone }}
+{%- endif %}
+{%- if date_of_birth %}
+- Date of Birth: {{ date_of_birth }}
+{%- endif %}
 
 REQUEST:
 I formally request that you:
@@ -42,10 +42,10 @@ I am exercising my privacy rights under applicable data protection laws, which m
 - Colorado Privacy Act (CPA) - Colorado
 - Other applicable state and federal privacy laws
 
-Please respond to this request within 30 days. If you require any additional information to verify my identity or process this request, please contact me at {{.Email}}.
+Please respond to this request within 30 days. If you require any additional information to verify my identity or process this request, please contact me at {{ email }}.
 
 Thank you for your prompt attention to this matter.
 
 Sincerely,
-{{.FullName}}
-{{.Date}}
+{{ full_name }}
+{{ date }}

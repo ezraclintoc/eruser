@@ -1,28 +1,28 @@
-To Whom It May Concern at {{.BrokerName}},
+To Whom It May Concern at {{ broker_name }},
 
 I am a California resident writing to exercise my rights under the California Consumer Privacy Act (CCPA) and the California Privacy Rights Act (CPRA). I am requesting that you delete all personal information you have collected about me.
 
 PERSONAL IDENTIFICATION:
-- Full Name: {{.FullName}}
-- Email Address: {{.Email}}
-{{- if .Address}}
-- Address: {{.Address}}
-{{- end}}
-{{- if .City}}
-- City: {{.City}}
-{{- end}}
-{{- if .State}}
-- State: {{.State}}
-{{- end}}
-{{- if .ZipCode}}
-- ZIP Code: {{.ZipCode}}
-{{- end}}
-{{- if .Phone}}
-- Phone: {{.Phone}}
-{{- end}}
-{{- if .DateOfBirth}}
-- Date of Birth: {{.DateOfBirth}}
-{{- end}}
+- Full Name: {{ full_name }}
+- Email Address: {{ email }}
+{%- if address %}
+- Address: {{ address }}
+{%- endif %}
+{%- if city %}
+- City: {{ city }}
+{%- endif %}
+{%- if state %}
+- State: {{ state }}
+{%- endif %}
+{%- if zip_code %}
+- ZIP Code: {{ zip_code }}
+{%- endif %}
+{%- if phone %}
+- Phone: {{ phone }}
+{%- endif %}
+{%- if date_of_birth %}
+- Date of Birth: {{ date_of_birth }}
+{%- endif %}
 
 LEGAL BASIS:
 Under California Civil Code Section 1798.105, I have the right to request deletion of my personal information. This includes:
@@ -40,10 +40,10 @@ REQUEST:
 
 Please note that under CCPA Section 1798.105(c), you must respond to this request within 45 days. You may not discriminate against me for exercising these rights under Section 1798.125.
 
-If you need to verify my identity, please contact me at {{.Email}}. I am prepared to provide reasonable verification as required.
+If you need to verify my identity, please contact me at {{ email }}. I am prepared to provide reasonable verification as required.
 
 Thank you for your compliance with California privacy law.
 
 Sincerely,
-{{.FullName}}
-{{.Date}}
+{{ full_name }}
+{{ date }}
