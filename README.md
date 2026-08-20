@@ -27,7 +27,9 @@ Install instructions are coming once the rewrite settles. For now, this is a bui
 
 ## Why Rust
 
-The original is Go and works. The rewrite is not a complaint about that — it's about where the project is headed. A single static binary with no runtime, compile-checked error handling on every fallible path, and no data races in the concurrent send pipeline all make the long-term roadmap below cheaper to build and safer to trust with personal data.
+Honestly? Because I like writing Rust more. There's nothing wrong with the Go original — it works, and this fork exists because of it, not in spite of it.
+
+The usual arguments do apply — memory safety, a single static binary, errors you have to handle before it compiles — and they're genuinely nice to have in something that holds your home address and an email password. But they're the reasons it's a good language to keep maintaining this in, not the reason the rewrite happened. Preference came first.
 
 ## Roadmap
 

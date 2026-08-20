@@ -253,3 +253,14 @@ fn bundled_broker_database_loads_and_is_well_formed() {
         );
     }
 }
+
+/// A copied-out binary with no data directory beside it must still have the
+/// full broker list.
+#[test]
+fn the_embedded_database_matches_the_file_on_disk() {
+    let embedded = BrokerDatabase::embedded().unwrap();
+    let from_file =
+        BrokerDatabase::load_from_file(concat!(env!("CARGO_MANIFEST_DIR"), "/data/brokers.yaml"))
+            .unwrap();
+    assert_eq!(embedded.brokers, from_file.brokers);
+}

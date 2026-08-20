@@ -5,7 +5,7 @@
 //! `nil`; here lookups return `Option<&Broker>` and removals return the owned
 //! `Broker` that was taken out.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +79,12 @@ pub struct BrokerDatabase {
     pub brokers: Vec<Broker>,
 }
 
+/// The database shipped with eruser, embedded at compile time.
+///
+/// Having it in the binary means a copied-out `eruser` still works with no
+/// data directory beside it; the Go version silently loaded zero brokers.
+const EMBEDDED: &str = include_str!("../../data/brokers.yaml");
+
 impl BrokerDatabase {
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
@@ -89,6 +95,19 @@ impl BrokerDatabase {
         let mut db: BrokerDatabase =
             serde_norway::from_str(&data).map_err(|source| Error::Parse {
                 path: path.to_path_buf(),
+                source,
+            })?;
+        for broker in &mut db.brokers {
+            broker.sanitize();
+        }
+        Ok(db)
+    }
+
+    /// Parse the database embedded in the binary.
+    pub fn embedded() -> Result<Self, Error> {
+        let mut db: BrokerDatabase =
+            serde_norway::from_str(EMBEDDED).map_err(|source| Error::Parse {
+                path: PathBuf::from("<embedded>"),
                 source,
             })?;
         for broker in &mut db.brokers {
