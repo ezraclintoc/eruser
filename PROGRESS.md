@@ -3,25 +3,56 @@
 Running log of the Go → Rust port. Ordered newest first. Every entry
 corresponds to a commit on `main`.
 
-**Status:** Phase 1 (core) in progress — 6 of 8 modules ported, 140 tests
-passing.
+**Status:** Phase 1 complete — the CLI and the web interface both work.
+310 tests passing.
 
 | Module | Upstream source | Go LOC | Rust tests | Status |
 |---|---|---|---|---|
-| `broker` | `internal/broker/broker.go` | 203 | 20 | ported |
+| `broker` | `internal/broker/broker.go` | 203 | 21 | ported |
 | `config` | `internal/config/config.go` | 208 | 25 | ported |
 | `template` | `internal/template/template.go` | 141 | 17 | ported |
 | `email` | `internal/email/{sender,smtp}.go` | 169 | 16 | ported |
 | `history` | `internal/history/history.go` | 901 | 43 | ported |
 | `send` | extracted from `main.go` + `web/job.go` | — | 19 | ported |
-| `cli` | `cmd/eraser/main.go` | 1577 | — | next |
-| `web` | `internal/web/*` | 2942 | — | queued |
-| `inbox` | `internal/inbox/*` | 1669 | — | phase 2 |
+| `cli` | `cmd/eraser/main.go` | 1577 | 38 | ported |
+| `web` | `internal/web/*` + 21 templates | 2942 | 131 | ported |
+| `inbox` | `internal/inbox/*` | 1669 | — | next |
 | `browser` | `internal/browser/*` | 1498 | — | phase 2 |
 
 ---
 
 ## Changelog
+
+### `web` — the server, handlers, and setup wizard
+
+axum and tower replace chi. The routes are unchanged and so is the markup.
+Two bugs surfaced on the way: the CSRF middleware was replacing every
+`Set-Cookie` header on the response, which wiped the setup wizard's session
+on every step and lost the answers, and the tasks page read a figure the
+handler never supplied, rendering the whole page as a 500.
+
+### `web` — templates and assets
+
+All 21 templates converted from Go `html/template` to Jinja with a
+stack-based converter rather than by hand. Tailwind, HTMX, and the two
+webfonts are now served from the machine running eruser instead of from three
+CDNs — a privacy tool should not announce to a CDN each time someone opens
+it, and it should work without a network.
+
+### `web` — sessions, jobs, and security middleware
+
+Sessions keep the SMTP password server-side during setup, so the browser only
+ever holds an opaque id. A job stopped by a bad password reports as failed;
+Go marked it completed with an error attached, so a failed run looked
+successful. CSRF tokens are compared in constant time.
+
+### `cli` — the command line
+
+Six commands, each its own module, with the output-producing parts as pure
+functions so the wording is testable. The broker database is embedded in the
+binary, so a copied-out `eruser` still has all 764 entries — the Go version
+silently loaded zero and reported success. The app password is no longer
+echoed to the terminal while being typed.
 
 ### `send` — the send pipeline
 
