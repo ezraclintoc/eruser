@@ -7,9 +7,12 @@ edition = "2024"
 anyhow = "1.0.104"
 chrono = "0.4.45"
 clap = { version = "4.6.6", features = ["derive"] }
-lettre = { version = "0.11.23", default-features = false, features = ["tokio1-rustls", "smtp-transport", "builder", "rustls-native-certs", "pool"] }
+lettre = { version = "0.11.23", default-features = false, features = ["tokio1-rustls", "smtp-transport", "builder", "rustls-native-certs", "pool", "ring"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_norway = "0.9.42"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "chrono", "macros", "migrate"] }
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
