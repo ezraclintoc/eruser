@@ -18,6 +18,9 @@ There is an entire industry built on collecting your home address, your phone nu
 
 ## Status
 
+Module-by-module port progress lives in [PROGRESS.md](PROGRESS.md).
+
+
 This is an early rewrite. The initial Rust port was produced by AI; from here on out, development is done by humans. Treat that as an invitation — the port needs real eyes on it, and bug reports and PRs are the fastest way to make it solid.
 
 Install instructions are coming once the rewrite settles. For now, this is a build-from-source project.
