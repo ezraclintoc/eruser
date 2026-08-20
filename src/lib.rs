@@ -9,3 +9,4 @@ pub mod email;
 pub mod history;
 pub mod send;
 pub mod template;
+pub mod web;
