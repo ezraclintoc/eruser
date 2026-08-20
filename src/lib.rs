@@ -3,3 +3,4 @@
 //! A Rust rewrite of [eraser](https://github.com/digisamroc/eraser).
 
 pub mod broker;
+pub mod config;
