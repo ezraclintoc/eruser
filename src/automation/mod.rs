@@ -4,8 +4,12 @@
 //! following a confirmation link is plain HTTP, and only form filling needs
 //! a real browser.
 
+pub mod browser;
 pub mod captcha;
 pub mod confirm;
+pub mod filler;
 
+pub use browser::{Browser, BrowserOptions, FormOutcome};
 pub use captcha::{Captcha, CaptchaKind};
 pub use confirm::{Confirmation, Confirmer, Outcome};
+pub use filler::{FieldKind, FillPlan, FormField, plan};

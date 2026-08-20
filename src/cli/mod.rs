@@ -13,6 +13,8 @@ use crate::broker::BrokerDatabase;
 use crate::config::{self, Config};
 
 pub(crate) mod add_broker;
+pub(crate) mod confirm;
+pub(crate) mod fill;
 pub(crate) mod init;
 pub(crate) mod list_brokers;
 pub(crate) mod monitor;
@@ -68,6 +70,12 @@ pub enum Command {
     /// Read the mailbox and sort what brokers sent back
     Monitor(monitor::Args),
 
+    /// Follow the confirmation links brokers sent
+    Confirm(confirm::Args),
+
+    /// Fill in the opt-out forms brokers asked for
+    Fill(fill::Args),
+
     /// Start the local web interface
     Serve(serve::Args),
 }
@@ -86,6 +94,8 @@ impl Cli {
             Command::Status(args) => status::run(&paths, args).await,
             Command::AddBroker => add_broker::run(&paths),
             Command::Monitor(args) => monitor::run(&paths, args).await,
+            Command::Confirm(args) => confirm::run(&paths, args).await,
+            Command::Fill(args) => fill::run(&paths, args).await,
             Command::Serve(args) => serve::run(&paths, args).await,
         }
     }
@@ -178,6 +188,12 @@ pub enum Error {
 
     #[error(transparent)]
     Inbox(#[from] crate::inbox::scan::Error),
+
+    #[error(transparent)]
+    Confirm(#[from] crate::automation::confirm::Error),
+
+    #[error(transparent)]
+    Browser(#[from] crate::automation::browser::Error),
 
     #[error("could not read from the terminal")]
     Input(#[from] std::io::Error),
