@@ -52,6 +52,9 @@ The most useful contributions right now:
 - **Template wording** — better-phrased removal requests get better compliance
 - **Documentation** — clarity, examples, corrections
 
+See [CONTRIBUTING.md](CONTRIBUTING.md), and [docs/PORTING.md](docs/PORTING.md)
+if you are working on the port itself.
+
 ## Credits
 
 Original [eraser](https://github.com/digisamroc/eraser) by [digisamroc](https://github.com/digisamroc). The broker database and the email templates come from that project.
