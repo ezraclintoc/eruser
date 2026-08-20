@@ -15,6 +15,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
 use sqlx::{Row, SqlitePool};
 
 mod error;
+pub mod legacy;
 mod types;
 
 pub use error::Error;
@@ -80,6 +81,13 @@ impl Store {
     }
 
     async fn from_pool(pool: SqlitePool) -> Result<Self, Error> {
+        // A database written by the Go version has the tables but no
+        // migration history, so sqlx would try to create them again and
+        // fail. Bring it up to this schema first, keeping every row.
+        if legacy::is_legacy(&pool).await? {
+            legacy::adopt(&pool).await?;
+        }
+
         MIGRATOR.run(&pool).await.map_err(Error::Migrate)?;
         Ok(Self { pool })
     }
