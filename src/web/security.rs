@@ -376,8 +376,14 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Attach the CSRF cookie without disturbing any others.
+///
+/// `insert` would replace every Set-Cookie header on the response, which
+/// silently dropped the session cookie the setup wizard had just set — the
+/// wizard then started a fresh session on every step and lost the answers.
+/// `append` adds one more.
 fn set_csrf_cookie(response: &mut Response, token: &CsrfToken) {
     if let Ok(value) = HeaderValue::from_str(&cookie_header(CSRF_COOKIE, token.as_str())) {
-        response.headers_mut().insert(header::SET_COOKIE, value);
+        response.headers_mut().append(header::SET_COOKIE, value);
     }
 }

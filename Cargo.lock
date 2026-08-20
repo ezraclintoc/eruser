@@ -606,6 +606,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_norway",
+ "serde_urlencoded",
  "sqlx",
  "tempfile",
  "thiserror",

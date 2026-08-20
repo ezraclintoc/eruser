@@ -540,22 +540,6 @@ fn an_empty_name_produces_an_empty_slug() {
     assert_eq!(add_broker::slugify("!!!"), "");
 }
 
-// -------------------------------------------------------------------
-// serve
-// -------------------------------------------------------------------
-
-/// Until the web UI lands, the command must say so and point somewhere
-/// useful rather than starting a server that serves nothing.
-#[tokio::test]
-async fn serve_explains_that_it_is_not_ready_yet() {
-    let error = serve::run(&Paths::default(), serve::Args::default())
-        .await
-        .unwrap_err();
-    let message = error.to_string();
-    assert!(message.contains("not been ported yet"), "{message}");
-    assert!(message.contains("eruser send"), "{message}");
-}
-
 /// Some failures across 764 community-maintained addresses are normal, so a
 /// partial failure must stay scriptable.
 #[test]
@@ -564,4 +548,29 @@ fn the_all_failed_error_explains_what_to_check() {
     assert!(message.contains("764"));
     assert!(message.contains("email settings"));
     assert!(message.contains("eruser status"));
+}
+
+// -------------------------------------------------------------------
+// serve
+// -------------------------------------------------------------------
+
+/// A typo in --host should be reported, not turned into a wildcard bind.
+#[tokio::test]
+async fn serve_refuses_a_host_that_is_not_an_address() {
+    let store = crate::history::Store::open_in_memory().await.unwrap();
+    let result = crate::web::Server::new(
+        "not-a-host",
+        8080,
+        None,
+        PathBuf::from("/tmp/eruser-test.yaml"),
+        crate::broker::BrokerDatabase::default(),
+        store,
+        crate::template::Engine::new().unwrap(),
+    );
+
+    match result {
+        Err(crate::web::Error::BadHost(host)) => assert_eq!(host, "not-a-host"),
+        Err(other) => panic!("wrong error: {other}"),
+        Ok(_) => panic!("a bogus host should not produce a server"),
+    }
 }
