@@ -1,0 +1,12 @@
+/target
+**/*.rs.bk
+*.pdb
+
+# Local user data — never commit
+config.yaml
+/config.yaml
+*.db
+*.db-shm
+*.db-wal
+/screenshots
+.env
