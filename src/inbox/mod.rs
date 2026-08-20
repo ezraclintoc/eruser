@@ -7,9 +7,11 @@
 use chrono::{DateTime, Utc};
 
 pub mod classifier;
+pub mod monitor;
 pub mod parser;
 
 pub use classifier::{ClassifiedResponse, ResponseType, classify, classify_by_subject};
+pub use monitor::Monitor;
 pub use parser::ExtractedUrls;
 
 /// One message fetched from the mailbox.

@@ -330,19 +330,29 @@ impl Config {
     /// Check that inbox monitoring is configured. Only called by the commands
     /// that actually connect to IMAP.
     pub fn validate_inbox(&self) -> Result<(), ValidationError> {
-        if !self.inbox.enabled {
+        self.inbox.validate()
+    }
+}
+
+impl InboxConfig {
+    /// Check that this is complete enough to connect with.
+    ///
+    /// Lives on the settings rather than on `Config` so the monitor, which
+    /// only ever holds this half, can check its own inputs.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if !self.enabled {
             return Err(ValidationError::InboxDisabled);
         }
-        if self.inbox.email.is_empty() {
+        if self.email.is_empty() {
             return Err(ValidationError::MissingInboxEmail);
         }
-        if self.inbox.password.is_empty() {
+        if self.password.is_empty() {
             return Err(ValidationError::MissingInboxPassword);
         }
-        if self.inbox.server.is_empty() {
+        if self.server.is_empty() {
             return Err(ValidationError::MissingInboxServer);
         }
-        if self.inbox.port == 0 {
+        if self.port == 0 {
             return Err(ValidationError::MissingInboxPort);
         }
         Ok(())
