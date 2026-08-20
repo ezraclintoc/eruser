@@ -113,6 +113,7 @@ string_enum! {
         ConfirmationRequired => "confirmation_required",
         Success => "success",
         Rejected => "rejected",
+        Bounced => "bounced",
         Pending => "pending",
         Unknown => "unknown",
     }

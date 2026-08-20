@@ -530,6 +530,7 @@ pub fn response_type_label(response_type: ResponseType) -> &'static str {
         ResponseType::Success => "Removed",
         ResponseType::Rejected => "Refused",
         ResponseType::Pending => "In progress",
+        ResponseType::Bounced => "Address bounced",
         ResponseType::Unknown => "Needs a look",
     }
 }
