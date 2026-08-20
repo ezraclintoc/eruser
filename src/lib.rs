@@ -2,6 +2,7 @@
 //!
 //! A Rust rewrite of [eraser](https://github.com/digisamroc/eraser).
 
+pub mod automation;
 pub mod broker;
 pub mod cli;
 pub mod config;
