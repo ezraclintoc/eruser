@@ -4,4 +4,5 @@
 
 pub mod broker;
 pub mod config;
+pub mod email;
 pub mod template;

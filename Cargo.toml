@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
+async-trait = "0.1.92"
 chrono = "0.4.45"
 clap = { version = "4.6.6", features = ["derive"] }
 lettre = { version = "0.11.23", default-features = false, features = ["tokio1-rustls", "smtp-transport", "builder", "rustls-native-certs", "pool", "ring"] }
@@ -14,6 +15,7 @@ serde_norway = "0.9.42"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "chrono", "macros", "migrate"] }
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["full"] }
+uuid = { version = "1.24.1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
