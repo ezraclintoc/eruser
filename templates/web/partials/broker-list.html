@@ -1,0 +1,157 @@
+<!-- Count header -->
+<div class="px-4 py-3 border-b border-[var(--border)] bg-elevated">
+    <p class="text-sm text-secondary">Showing <span class="font-medium text-primary">{{ filtered }}</span> of <span class="font-medium text-primary">{{ total }}</span> brokers</p>
+</div>
+
+<!-- Desktop Table -->
+<div class="hidden md:block overflow-x-auto">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Broker</th>
+                <th>Category</th>
+                <th>Region</th>
+                <th>Status</th>
+                <th class="text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in brokers %}
+            <tr>
+                <td>
+                    <div class="flex flex-col">
+                        <span class="font-medium text-primary">{{ item.name }}</span>
+                        <span class="text-sm text-muted">{{ item.email }}</span>
+                    </div>
+                </td>
+                <td>
+                    {% if item.category %}
+                    <span class="badge badge-neutral">{{ item.category }}</span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if item.region %}
+                    <span class="text-secondary uppercase text-sm">{{ item.region }}</span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td id="status-{{ item.id }}">
+                    {% if item.status == "sent" %}
+                    <span class="badge badge-success">
+                        <span class="status-dot status-dot-success"></span>
+                        Sent
+                    </span>
+                    {% elif item.status == "failed" %}
+                    <span class="badge badge-error">
+                        <span class="status-dot status-dot-error"></span>
+                        Failed
+                    </span>
+                    {% else %}
+                    <span class="badge badge-neutral">
+                        <span class="status-dot" style="background: var(--text-muted);"></span>
+                        Never sent
+                    </span>
+                    {% endif %}
+                </td>
+                <td class="text-right">
+                    <div class="flex items-center justify-end gap-2">
+                        <button
+                            class="btn btn-ghost text-sm py-1 px-3"
+                            hx-post="/api/send/{{ item.id }}"
+                            hx-target="#status-{{ item.id }}"
+                            hx-swap="innerHTML"
+                            hx-indicator="#spinner-{{ item.id }}"
+                        >
+                            Send
+                            <span id="spinner-{{ item.id }}" class="htmx-indicator ml-1">
+                                <span class="spinner"></span>
+                            </span>
+                        </button>
+                        {% if item.opt_out_url %}
+                        <a href="{{ item.opt_out_url }}" target="_blank" class="btn btn-ghost text-sm py-1 px-3">
+                            Opt-out
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                            </svg>
+                        </a>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" class="py-12 text-center">
+                    <div class="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4" style="background: var(--bg-elevated);">
+                        <svg class="w-8 h-8 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                    </div>
+                    <p class="text-secondary mb-1">No brokers found</p>
+                    <p class="text-sm text-muted">Try adjusting your search or filters</p>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Mobile Cards -->
+<div class="md:hidden divide-y divide-[var(--border-subtle)]">
+    {% for item2 in brokers %}
+    <div class="p-4">
+        <div class="flex items-start justify-between mb-3">
+            <div>
+                <h3 class="font-medium text-primary">{{ item2.name }}</h3>
+                <p class="text-sm text-muted">{{ item2.email }}</p>
+            </div>
+            <div id="status-mobile-{{ item2.id }}">
+                {% if item2.status == "sent" %}
+                <span class="badge badge-success">Sent</span>
+                {% elif item2.status == "failed" %}
+                <span class="badge badge-error">Failed</span>
+                {% else %}
+                <span class="badge badge-neutral">Pending</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex items-center gap-2 mb-3 text-sm">
+            {% if item2.category %}
+            <span class="badge badge-neutral">{{ item2.category }}</span>
+            {% endif %}
+            {% if item2.region %}
+            <span class="text-muted uppercase">{{ item2.region }}</span>
+            {% endif %}
+        </div>
+        <div class="flex gap-2">
+            <button
+                class="btn btn-primary flex-1 py-2"
+                hx-post="/api/send/{{ item2.id }}"
+                hx-target="#status-mobile-{{ item2.id }}"
+                hx-swap="innerHTML"
+            >
+                Send Request
+            </button>
+            {% if item2.opt_out_url %}
+            <a href="{{ item2.opt_out_url }}" target="_blank" class="btn btn-secondary py-2">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="p-8 text-center">
+        <div class="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4" style="background: var(--bg-elevated);">
+            <svg class="w-8 h-8 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+        </div>
+        <p class="text-secondary mb-1">No brokers found</p>
+        <p class="text-sm text-muted">Try adjusting your search or filters</p>
+    </div>
+    {% endfor %}
+</div>
