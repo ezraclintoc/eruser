@@ -6,4 +6,5 @@ pub mod broker;
 pub mod config;
 pub mod email;
 pub mod history;
+pub mod send;
 pub mod template;
