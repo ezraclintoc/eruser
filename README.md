@@ -18,12 +18,23 @@ There is an entire industry built on collecting your home address, your phone nu
 
 ## Status
 
-Module-by-module port progress lives in [PROGRESS.md](PROGRESS.md).
+The port is complete — every part of the original has a Rust counterpart, covered by 520 tests. What it can do:
 
+```
+eruser init            set up your details and email
+eruser send            send removal requests
+eruser monitor         read the replies and sort them
+eruser confirm         follow the confirmation links brokers sent
+eruser fill            fill in the opt-out forms they asked for
+eruser status          see how it all went
+eruser serve           do all of it in a browser instead
+```
 
-This is an early rewrite. The initial Rust port was produced by AI; from here on out, development is done by humans. Treat that as an invitation — the port needs real eyes on it, and bug reports and PRs are the fastest way to make it solid.
+The initial Rust port was produced by AI; from here on out, development is done by humans. Treat that as an invitation — it needs real eyes on it, and bug reports and PRs are the fastest way to make it solid.
 
-Install instructions are coming once the rewrite settles. For now, this is a build-from-source project.
+The port turned up eleven bugs in the original along the way, from a classifier that filed the same reply differently on different runs to a setup wizard that silently lost every answer you typed. [PROGRESS.md](PROGRESS.md) lists them, and each has a test so it cannot come back.
+
+Install instructions are coming. For now, this is a build-from-source project.
 
 ## Why Rust
 
