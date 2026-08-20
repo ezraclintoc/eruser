@@ -89,7 +89,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Validate the database
-        run: cargo test --lib broker::
+        run: "cargo test --lib broker::"
 
       - name: Check contact domains still resolve
         run: |
