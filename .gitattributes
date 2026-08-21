@@ -1,0 +1,15 @@
+# Files embedded in the binary must be byte-identical on every platform.
+# Without this, git hands Windows CRLF copies, so the same eruser build
+# produces different email bodies depending on where it was compiled.
+*.txt    text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.html   text eol=lf
+*.css    text eol=lf
+*.sql    text eol=lf
+*.rs     text eol=lf
+*.md     text eol=lf
+
+# Binary assets, never translated.
+*.woff2  binary
+*.png    binary
