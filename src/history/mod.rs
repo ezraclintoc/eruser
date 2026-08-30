@@ -18,10 +18,12 @@ pub mod accounts;
 mod error;
 pub mod legacy;
 mod types;
+pub mod users;
 
 pub use accounts::{AccountCapacity, AccountScope, NewSenderAccount, SenderAccount};
 pub use error::Error;
 pub use types::*;
+pub use users::{AccountError, User};
 
 /// Bundled migrations, embedded at compile time.
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");

@@ -22,6 +22,9 @@ pub enum Error {
     #[error("database query failed")]
     Query(#[from] sqlx::Error),
 
+    #[error(transparent)]
+    Account(#[from] super::users::AccountError),
+
     #[error("unknown {kind} value {value:?} in the database")]
     UnknownEnumValue { kind: &'static str, value: String },
 }
