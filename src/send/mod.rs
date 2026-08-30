@@ -17,6 +17,9 @@ use crate::email::{self, Message, Sender};
 use crate::history::{DEFAULT_USER_ID, NewRecord, Store};
 use crate::template::Engine;
 
+pub mod pool;
+pub use pool::{Reservation, SenderPool};
+
 /// Knobs for one run of the pipeline.
 #[derive(Debug, Clone)]
 pub struct SendOptions {
@@ -98,7 +101,9 @@ pub struct SendJob {
     pub brokers: Vec<Broker>,
     pub profile: Profile,
     pub engine: Arc<Engine>,
-    pub sender: Arc<dyn Sender>,
+    /// The accounts this run may send through, in the order it will use
+    /// them. A run rolls over to the next when one is spent.
+    pub pool: SenderPool,
     /// `None` records nothing, for a preview that should leave no trace.
     pub store: Option<Store>,
     pub options: SendOptions,
@@ -110,7 +115,7 @@ impl SendJob {
     /// A single broker failing never aborts the run: a bad address in a
     /// 750-entry community database must not stop the other 749 requests.
     pub async fn run(
-        self,
+        mut self,
         cancel: &CancellationToken,
         mut progress: impl FnMut(Progress),
     ) -> Summary {
@@ -126,22 +131,38 @@ impl SendJob {
                 break;
             }
 
-            let over_limit = self
+            // Either the run has hit the cap it was given, or every account
+            // has spent its allowance for today.
+            let over_run_limit = self
                 .options
                 .daily_limit
                 .is_some_and(|limit| summary.attempted() >= limit);
-
-            let outcome = if over_limit {
-                summary.skipped += 1;
-                Outcome::SkippedOverLimit
+            let reservation = if over_run_limit {
+                None
             } else {
-                let outcome = self.process(broker).await;
+                self.pool.take()
+            };
+            let over_limit = reservation.is_none();
+
+            let outcome = if let Some(reservation) = reservation {
+                let outcome = Self::process(
+                    &self.engine,
+                    &self.profile,
+                    &self.options,
+                    self.store.as_ref(),
+                    &reservation,
+                    broker,
+                )
+                .await;
                 match &outcome {
                     Outcome::Sent { .. } => summary.sent += 1,
                     Outcome::Failed { .. } => summary.failed += 1,
                     Outcome::SkippedOverLimit => summary.skipped += 1,
                 }
                 outcome
+            } else {
+                summary.skipped += 1;
+                Outcome::SkippedOverLimit
             };
 
             progress(Progress::Broker {
@@ -171,51 +192,84 @@ impl SendJob {
     }
 
     /// Render, send, and record one request.
-    async fn process(&self, broker: &Broker) -> Outcome {
-        let email = match self
-            .engine
-            .render(&self.options.template, &self.profile, broker)
-        {
+    ///
+    /// Takes its collaborators rather than `&self` so the caller can hold a
+    /// mutable borrow of the pool while this runs.
+    async fn process(
+        engine: &Engine,
+        profile: &Profile,
+        options: &SendOptions,
+        store: Option<&Store>,
+        reservation: &Reservation,
+        broker: &Broker,
+    ) -> Outcome {
+        let email = match engine.render(&options.template, profile, broker) {
             Ok(email) => email,
-            Err(error) => return self.record_failure(broker, &error_chain(&error)).await,
+            Err(error) => {
+                return Self::record_failure(
+                    store,
+                    options,
+                    reservation,
+                    broker,
+                    &error_chain(&error),
+                )
+                .await;
+            }
         };
 
         let message = Message {
             to: broker.email.clone(),
-            from: self.options.from.clone(),
+            // The account carries the address, not the run: with several
+            // accounts in play, each message goes out from whichever one
+            // actually sent it.
+            from: reservation.from.clone(),
             subject: email.subject,
             body: email.body,
         };
 
-        match self.sender.send(&message).await {
+        match reservation.sender.send(&message).await {
             Ok(sent) => {
                 let record = NewRecord::sent(
                     &broker.id,
                     &broker.name,
                     &broker.email,
-                    &self.options.template,
+                    &options.template,
                     &sent.message_id,
                 )
-                .for_user(self.options.user_id);
-                self.record(record).await;
+                .for_user(options.user_id)
+                .through_account(reservation.account_id);
+
+                Self::record(store, record).await;
                 Outcome::Sent {
                     message_id: sent.message_id,
                 }
             }
-            Err(error) => self.record_failure(broker, &error_chain(&error)).await,
+            Err(error) => {
+                Self::record_failure(store, options, reservation, broker, &error_chain(&error))
+                    .await
+            }
         }
     }
 
-    async fn record_failure(&self, broker: &Broker, error: &str) -> Outcome {
+    async fn record_failure(
+        store: Option<&Store>,
+        options: &SendOptions,
+        reservation: &Reservation,
+        broker: &Broker,
+        error: &str,
+    ) -> Outcome {
         let record = NewRecord::failed(
             &broker.id,
             &broker.name,
             &broker.email,
-            &self.options.template,
+            &options.template,
             error,
         )
-        .for_user(self.options.user_id);
-        self.record(record).await;
+        .for_user(options.user_id)
+        // A failure still counts against the account that attempted it.
+        .through_account(reservation.account_id);
+
+        Self::record(store, record).await;
         Outcome::Failed {
             error: error.to_string(),
         }
@@ -226,8 +280,8 @@ impl SendJob {
     /// A history write failing must not turn a delivered email into a
     /// reported failure — the broker already has the request either way — so
     /// this logs and moves on.
-    async fn record(&self, record: NewRecord) {
-        let Some(store) = &self.store else {
+    async fn record(store: Option<&Store>, record: NewRecord) {
+        let Some(store) = store else {
             return;
         };
         if let Err(error) = store.add_record(&record).await {

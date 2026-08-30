@@ -49,7 +49,7 @@ async fn run_with(
         brokers,
         profile: profile(),
         engine: Arc::new(Engine::new().unwrap()),
-        sender,
+        pool: SenderPool::single(sender.clone(), "jane@example.com".into()),
         store,
         options,
     };
@@ -340,7 +340,7 @@ async fn cancelling_mid_run_stops_after_the_current_broker() {
         brokers: vec![broker("a"), broker("b"), broker("c")],
         profile: profile(),
         engine: Arc::new(Engine::new().unwrap()),
-        sender: sender.clone(),
+        pool: SenderPool::single(sender.clone(), "jane@example.com".into()),
         store: None,
         options: options(),
     };
@@ -367,7 +367,10 @@ async fn cancelling_interrupts_the_rate_limit_delay() {
         brokers: vec![broker("a"), broker("b")],
         profile: profile(),
         engine: Arc::new(Engine::new().unwrap()),
-        sender: Arc::new(RecordingSender::default()),
+        pool: SenderPool::single(
+            Arc::new(RecordingSender::default()),
+            "jane@example.com".into(),
+        ),
         store: None,
         options: SendOptions {
             rate_limit: Duration::from_secs(3600),
@@ -397,7 +400,10 @@ async fn the_rate_limit_delay_is_applied_between_sends_but_not_after_the_last() 
         brokers: vec![broker("a"), broker("b"), broker("c")],
         profile: profile(),
         engine: Arc::new(Engine::new().unwrap()),
-        sender: Arc::new(RecordingSender::default()),
+        pool: SenderPool::single(
+            Arc::new(RecordingSender::default()),
+            "jane@example.com".into(),
+        ),
         store: None,
         options: SendOptions {
             rate_limit: Duration::from_secs(2),

@@ -433,6 +433,7 @@ fn record(broker_id: &str, status: Status, error: &str) -> Record {
     Record {
         id: 1,
         user_id: crate::history::DEFAULT_USER_ID,
+        sender_account_id: None,
         broker_id: broker_id.to_string(),
         broker_name: format!("Broker {broker_id}"),
         email: format!("privacy@{broker_id}.example"),

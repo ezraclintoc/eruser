@@ -203,6 +203,11 @@ pub enum Error {
     )]
     AllSendsFailed { count: usize },
 
+    #[error(
+        "every sending account has used its allowance for today\n\nAdd another account, or run this again tomorrow. `eruser accounts` shows\nwhat each one has left."
+    )]
+    NoCapacityToday,
+
     #[error("cancelled")]
     Cancelled,
 }

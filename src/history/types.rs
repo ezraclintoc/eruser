@@ -135,6 +135,7 @@ string_enum! {
 pub struct Record {
     pub id: i64,
     pub user_id: i64,
+    pub sender_account_id: Option<i64>,
     pub broker_id: String,
     pub broker_name: String,
     pub email: String,
@@ -151,6 +152,11 @@ pub struct Record {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewRecord {
     pub user_id: i64,
+    /// Which sending account carried it, when one is known.
+    ///
+    /// This is what makes the daily count per account rather than per
+    /// person, so a run can roll over when one mailbox is spent.
+    pub sender_account_id: Option<i64>,
     pub broker_id: String,
     pub broker_name: String,
     pub email: String,
@@ -176,6 +182,7 @@ impl NewRecord {
             broker_name: broker_name.to_string(),
             email: email.to_string(),
             template: template.to_string(),
+            sender_account_id: None,
             status: Status::Sent,
             message_id: message_id.to_string(),
             error: String::new(),
@@ -198,6 +205,7 @@ impl NewRecord {
             broker_name: broker_name.to_string(),
             email: email.to_string(),
             template: template.to_string(),
+            sender_account_id: None,
             status: Status::Failed,
             message_id: String::new(),
             error: error.to_string(),
@@ -207,6 +215,12 @@ impl NewRecord {
 
     pub fn for_user(mut self, user_id: i64) -> Self {
         self.user_id = user_id;
+        self
+    }
+
+    /// Attribute the send to a particular account.
+    pub fn through_account(mut self, account_id: Option<i64>) -> Self {
+        self.sender_account_id = account_id;
         self
     }
 }

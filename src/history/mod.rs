@@ -148,11 +148,13 @@ impl Store {
     pub async fn add_record(&self, record: &NewRecord) -> Result<i64, Error> {
         let id = sqlx::query(
             "INSERT INTO removal_requests
-                 (user_id, broker_id, broker_name, email, template, status,
-                  message_id, error, sent_at, created_at, pipeline_status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 (user_id, sender_account_id, broker_id, broker_name, email,
+                  template, status, message_id, error, sent_at, created_at,
+                  pipeline_status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(record.user_id)
+        .bind(record.sender_account_id)
         .bind(&record.broker_id)
         .bind(&record.broker_name)
         .bind(&record.email)
@@ -750,6 +752,7 @@ fn record_from_row(row: SqliteRow) -> Result<Record, Error> {
     Ok(Record {
         id: row.try_get("id")?,
         user_id: row.try_get("user_id")?,
+        sender_account_id: row.try_get("sender_account_id")?,
         broker_id: row.try_get("broker_id")?,
         broker_name: row.try_get("broker_name")?,
         email: row.try_get("email")?,

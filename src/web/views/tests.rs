@@ -229,6 +229,7 @@ fn a_history_row_carries_the_status_and_error_across() {
     let record = Record {
         id: 1,
         user_id: DEFAULT_USER_ID,
+        sender_account_id: None,
         broker_id: "acme".into(),
         broker_name: "Acme Data".into(),
         email: "privacy@acme.example".into(),
@@ -256,6 +257,7 @@ fn timestamps_are_serialized_as_rfc_3339() {
     let record = Record {
         id: 1,
         user_id: DEFAULT_USER_ID,
+        sender_account_id: None,
         broker_id: "acme".into(),
         broker_name: "Acme".into(),
         email: "a@b.example".into(),
@@ -281,6 +283,7 @@ fn a_row_that_was_never_sent_has_no_timestamp() {
     let record = Record {
         id: 1,
         user_id: DEFAULT_USER_ID,
+        sender_account_id: None,
         broker_id: "acme".into(),
         broker_name: "Acme".into(),
         email: "a@b.example".into(),

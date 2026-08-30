@@ -105,7 +105,7 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
         brokers,
         profile: config.profile.clone(),
         engine: Arc::new(engine),
-        sender: sender_for(&config.email, args.dry_run)?,
+        pool: build_pool(&config, store.as_ref(), args.dry_run).await?,
         store: store.clone(),
         options,
     };
@@ -209,4 +209,38 @@ pub(super) fn format_summary(summary: &Summary, dry_run: bool) -> String {
     }
 
     out
+}
+
+/// The accounts this run may send through.
+///
+/// A dry run needs no real transport. Otherwise the stored accounts are
+/// used, so a run spreads across every mailbox the person has; an install
+/// that has not added any yet falls back to whatever the config described.
+async fn build_pool(
+    config: &crate::config::Config,
+    store: Option<&Store>,
+    dry_run: bool,
+) -> Result<crate::send::SenderPool, Error> {
+    if dry_run {
+        return Ok(crate::send::SenderPool::single(
+            std::sync::Arc::new(crate::email::DryRunSender),
+            config.email.from.clone(),
+        ));
+    }
+
+    if let Some(store) = store {
+        let capacity = store.account_capacity(DEFAULT_USER_ID).await?;
+        if !capacity.is_empty() {
+            let pool = crate::send::SenderPool::from_capacity(&capacity);
+            if pool.is_empty() {
+                return Err(Error::NoCapacityToday);
+            }
+            return Ok(pool);
+        }
+    }
+
+    Ok(crate::send::SenderPool::single(
+        sender_for(&config.email, false)?,
+        config.email.from.clone(),
+    ))
 }

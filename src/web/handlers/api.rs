@@ -1,6 +1,5 @@
 //! JSON endpoints, driven by HTMX and the progress poller.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Json;
@@ -103,7 +102,10 @@ pub async fn send_one(
         brokers: vec![broker],
         profile: config.profile.clone(),
         engine: state.engine.clone(),
-        sender: sender_for(&config.email, false)?,
+        pool: crate::send::SenderPool::single(
+            sender_for(&config.email, false)?,
+            config.email.from.clone(),
+        ),
         store: Some(state.store.clone()),
         options: SendOptions {
             template: config.options.template.clone(),
@@ -274,7 +276,28 @@ async fn start_send(
         daily_limit: Some(daily_limit),
     })?;
 
-    let sender = sender_for(&config.email, false)?;
+    // Every account this person may send through, so a run rolls over
+    // rather than stopping at one mailbox's daily cap.
+    let capacity = state.store.account_capacity(state.user_id).await?;
+    let pool = if capacity.is_empty() {
+        // Nothing configured as an account yet; fall back to whatever the
+        // config file described.
+        crate::send::SenderPool::single(
+            sender_for(&config.email, false)?,
+            config.email.from.clone(),
+        )
+    } else {
+        crate::send::SenderPool::from_capacity(&capacity)
+    };
+
+    if pool.is_empty() {
+        return Err(WebError::BadRequest(
+            "Every sending account has used its allowance for today. \
+             Add another account, or try again tomorrow."
+                .into(),
+        ));
+    }
+
     let options = SendOptions {
         template: config.options.template.clone(),
         from: config.email.from.clone(),
@@ -288,7 +311,7 @@ async fn start_send(
     let broker_ids: Vec<String> = brokers.iter().map(|b| b.id.clone()).collect();
 
     tokio::spawn(async move {
-        run_send_job(background, running, brokers, broker_ids, sender, options).await;
+        run_send_job(background, running, brokers, broker_ids, pool, options).await;
     });
 
     Ok(job)
@@ -300,7 +323,7 @@ async fn run_send_job(
     job: crate::web::job::Job,
     brokers: Vec<crate::broker::Broker>,
     broker_ids: Vec<String>,
-    sender: Arc<dyn crate::email::Sender>,
+    pool: crate::send::SenderPool,
     options: SendOptions,
 ) {
     let cancel = job.cancellation_token();
@@ -314,7 +337,7 @@ async fn run_send_job(
         brokers,
         profile: state.config().unwrap_or_default().profile,
         engine: state.engine.clone(),
-        sender,
+        pool,
         store: Some(state.store.clone()),
         options,
     };
