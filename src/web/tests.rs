@@ -52,6 +52,7 @@ fn configured() -> Config {
                 password: "app-password".into(),
                 use_tls: true,
             },
+            ..Default::default()
         },
         ..Default::default()
     }

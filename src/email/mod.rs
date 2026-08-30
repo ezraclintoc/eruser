@@ -4,9 +4,11 @@
 
 use crate::config::EmailConfig;
 
+mod api;
 mod error;
 mod smtp;
 
+pub use api::{ApiSender, Provider};
 pub use error::{Error, ValidationError};
 pub use smtp::SmtpSender;
 
@@ -47,6 +49,16 @@ pub fn new_sender(config: &EmailConfig) -> Result<Box<dyn Sender>, Error> {
     match config.provider.as_str() {
         "" | "smtp" => Ok(Box::new(SmtpSender::new(
             config.smtp.clone(),
+            config.from.clone(),
+        )?)),
+        "resend" => Ok(Box::new(ApiSender::new(
+            Provider::Resend,
+            config.resend.api_key.clone(),
+            config.from.clone(),
+        )?)),
+        "sendgrid" => Ok(Box::new(ApiSender::new(
+            Provider::SendGrid,
+            config.sendgrid.api_key.clone(),
             config.from.clone(),
         )?)),
         other => Err(Error::UnknownProvider(other.to_string())),

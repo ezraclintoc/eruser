@@ -60,13 +60,34 @@ impl Profile {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmailConfig {
+    /// `smtp`, `resend`, or `sendgrid`.
     #[serde(default)]
     pub provider: String,
     #[serde(default)]
     pub from: String,
     #[serde(default)]
     pub smtp: SmtpConfig,
+    #[serde(default, skip_serializing_if = "ApiKeyConfig::is_empty")]
+    pub resend: ApiKeyConfig,
+    #[serde(default, skip_serializing_if = "ApiKeyConfig::is_empty")]
+    pub sendgrid: ApiKeyConfig,
 }
+
+/// Credentials for a provider that takes a single API key.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiKeyConfig {
+    #[serde(default)]
+    pub api_key: String,
+}
+
+impl ApiKeyConfig {
+    pub fn is_empty(&self) -> bool {
+        self.api_key.is_empty()
+    }
+}
+
+/// The providers eruser can send through.
+pub const EMAIL_PROVIDERS: &[&str] = &["smtp", "resend", "sendgrid"];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SmtpConfig {
@@ -313,16 +334,25 @@ impl Config {
         if self.email.from.is_empty() {
             return Err(ValidationError::MissingFrom);
         }
-        if self.email.provider != "smtp" {
-            return Err(ValidationError::UnknownProvider(
-                self.email.provider.clone(),
-            ));
-        }
-        if self.email.smtp.host.is_empty() {
-            return Err(ValidationError::MissingSmtpHost);
-        }
-        if self.email.smtp.port == 0 {
-            return Err(ValidationError::MissingSmtpPort);
+        // Each provider needs different things, and a key for one must not
+        // excuse missing settings for another.
+        match self.email.provider.as_str() {
+            "smtp" => {
+                if self.email.smtp.host.is_empty() {
+                    return Err(ValidationError::MissingSmtpHost);
+                }
+                if self.email.smtp.port == 0 {
+                    return Err(ValidationError::MissingSmtpPort);
+                }
+            }
+            "resend" if self.email.resend.api_key.is_empty() => {
+                return Err(ValidationError::MissingApiKey("resend"));
+            }
+            "sendgrid" if self.email.sendgrid.api_key.is_empty() => {
+                return Err(ValidationError::MissingApiKey("sendgrid"));
+            }
+            "resend" | "sendgrid" => {}
+            other => return Err(ValidationError::UnknownProvider(other.to_string())),
         }
         Ok(())
     }

@@ -146,20 +146,22 @@ async fn new_sender_builds_smtp_for_an_empty_or_smtp_provider() {
             provider: provider.into(),
             from: "jane@example.com".into(),
             smtp: smtp_config(),
+            ..Default::default()
         };
         assert_eq!(new_sender(&config).unwrap().name(), "smtp");
     }
 }
 
 #[tokio::test]
-async fn new_sender_rejects_an_unknown_provider() {
+async fn new_sender_rejects_a_provider_that_does_not_exist() {
     let config = EmailConfig {
-        provider: "sendgrid".into(),
+        provider: "carrier-pigeon".into(),
         from: "jane@example.com".into(),
         smtp: smtp_config(),
+        ..Default::default()
     };
     match new_sender(&config) {
-        Err(Error::UnknownProvider(p)) => assert_eq!(p, "sendgrid"),
+        Err(Error::UnknownProvider(p)) => assert_eq!(p, "carrier-pigeon"),
         Err(other) => panic!("wrong error: {other}"),
         Ok(sender) => panic!("expected a failure, got the {} sender", sender.name()),
     }

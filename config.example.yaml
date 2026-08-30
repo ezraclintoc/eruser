@@ -17,7 +17,14 @@ profile:
   date_of_birth: "1990-01-15"  # Format: YYYY-MM-DD
 
 email:
-  # Email provider: "smtp" or "sendgrid"
+  # How to send: "smtp", "resend", or "sendgrid".
+  #
+  # smtp     — your own mailbox. Free, and requests come from your real
+  #            address. Gmail needs 2FA on and an app password.
+  # resend   — one API key, nothing else. Free tier covers a full run.
+  # sendgrid — same idea.
+  #
+  # Both services need you to verify the address you send from first.
   provider: smtp
   from: john.doe@example.com
 
@@ -29,7 +36,9 @@ email:
     password: your-app-password  # Use app password, not your regular password!
     use_tls: true
 
-  # SendGrid configuration (alternative to SMTP)
+  # Sending services, as alternatives to SMTP. Set provider above to match.
+  # resend:
+  #   api_key: re_xxxxxxxxxxxxxxxxxxxx
   # sendgrid:
   #   api_key: SG.xxxxxxxxxxxxxxxxxxxx
 

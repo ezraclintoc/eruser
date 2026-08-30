@@ -55,33 +55,75 @@ pub fn run(paths: &Paths) -> Result<(), Error> {
     println!("Sending email");
     println!("-------------");
     println!();
-    println!("eruser sends through your own mail account. For Gmail you need an");
-    println!("app password, not your normal one:");
-    println!("  https://myaccount.google.com/apppasswords");
+    println!("Two ways to do this:");
+    println!();
+    println!("  1. Your own mailbox over SMTP. Free, and the requests come from");
+    println!("     your real address — but Gmail needs two-factor authentication");
+    println!("     turned on and an app password generated.");
+    println!("  2. A sending service — Resend or SendGrid. One API key, nothing");
+    println!("     else to set up. Both have free tiers large enough for a full");
+    println!("     run, and both need you to verify the address you send from.");
     println!();
 
-    let username = prompt::line_or(
-        &format!("Email account to send from [{}]: ", config.profile.email),
+    let choice = prompt::line_or("Which? [1]: ", "1")?;
+
+    config.email.from = prompt::line_or(
+        &format!("Address to send from [{}]: ", config.profile.email),
         &config.profile.email,
     )?;
-    let password = prompt::secret("App password")?;
-    let host = prompt::line_or(&format!("SMTP host [{GMAIL_SMTP_HOST}]: "), GMAIL_SMTP_HOST)?;
-    let port = prompt::line_or(
-        &format!("SMTP port [{GMAIL_SMTP_PORT}]: "),
-        &GMAIL_SMTP_PORT.to_string(),
-    )?
-    .parse()
-    .unwrap_or(GMAIL_SMTP_PORT);
 
-    config.email.provider = "smtp".to_string();
-    config.email.from = username.clone();
-    config.email.smtp = SmtpConfig {
-        host,
-        port,
-        username,
-        password,
-        use_tls: true,
-    };
+    match choice.trim() {
+        "2" | "resend" | "sendgrid" => {
+            let provider = prompt::line_or("resend or sendgrid [resend]: ", "resend")?;
+            let provider = provider.trim().to_lowercase();
+
+            let signup = match provider.as_str() {
+                "sendgrid" => "https://app.sendgrid.com/settings/api_keys",
+                _ => "https://resend.com/api-keys",
+            };
+            println!();
+            println!("Create a key at {signup}");
+            println!();
+
+            let key = prompt::secret("API key")?;
+            if provider == "sendgrid" {
+                config.email.provider = "sendgrid".to_string();
+                config.email.sendgrid.api_key = key;
+            } else {
+                config.email.provider = "resend".to_string();
+                config.email.resend.api_key = key;
+            }
+        }
+        _ => {
+            println!();
+            println!("For Gmail you need an app password, not your normal one:");
+            println!("  https://myaccount.google.com/apppasswords");
+            println!();
+
+            let username = prompt::line_or(
+                &format!("Mailbox to sign in as [{}]: ", config.email.from),
+                &config.email.from,
+            )?;
+            let password = prompt::secret("App password")?;
+            let host =
+                prompt::line_or(&format!("SMTP host [{GMAIL_SMTP_HOST}]: "), GMAIL_SMTP_HOST)?;
+            let port = prompt::line_or(
+                &format!("SMTP port [{GMAIL_SMTP_PORT}]: "),
+                &GMAIL_SMTP_PORT.to_string(),
+            )?
+            .parse()
+            .unwrap_or(GMAIL_SMTP_PORT);
+
+            config.email.provider = "smtp".to_string();
+            config.email.smtp = SmtpConfig {
+                host,
+                port,
+                username,
+                password,
+                use_tls: true,
+            };
+        }
+    }
 
     println!();
     let template = prompt::line_or(

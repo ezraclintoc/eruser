@@ -438,6 +438,7 @@ async fn sender_for_picks_the_dry_run_transport() {
             use_tls: true,
             ..Default::default()
         },
+        ..Default::default()
     };
 
     assert_eq!(sender_for(&config, true).unwrap().name(), "dry-run");

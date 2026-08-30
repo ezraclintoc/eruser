@@ -19,7 +19,7 @@ mime_guess = "2.0.5"
 minijinja = { version = "2.24.0", features = ["loader"] }
 rand = "0.10.2"
 regex = "1.13.1"
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "charset", "http2", "gzip"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "charset", "http2", "gzip", "json"] }
 rust-embed = { version = "8.12.0", features = ["interpolate-folder-path"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "logging", "tls12", "std"] }
 rustls-native-certs = "0.8.4"

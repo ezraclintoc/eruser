@@ -46,8 +46,10 @@ pub enum ValidationError {
     MissingProvider,
     #[error("email: from address is required")]
     MissingFrom,
-    #[error("email: unknown provider {0:?} (only smtp is supported)")]
+    #[error("email: unknown provider {0:?} (expected smtp, resend, or sendgrid)")]
     UnknownProvider(String),
+    #[error("email.{0}: an API key is required")]
+    MissingApiKey(&'static str),
     #[error("email.smtp: host is required")]
     MissingSmtpHost,
     #[error("email.smtp: port is required")]

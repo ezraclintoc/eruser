@@ -19,6 +19,7 @@ fn valid_config() -> Config {
                 password: "app-password".into(),
                 use_tls: true,
             },
+            ..Default::default()
         },
         ..Default::default()
     }
@@ -130,10 +131,10 @@ fn validate_rejects_missing_provider() {
 #[test]
 fn validate_rejects_unknown_provider() {
     let mut cfg = valid_config();
-    cfg.email.provider = "sendgrid".into();
+    cfg.email.provider = "carrier-pigeon".into();
     assert_eq!(
         cfg.validate(),
-        Err(ValidationError::UnknownProvider("sendgrid".into()))
+        Err(ValidationError::UnknownProvider("carrier-pigeon".into()))
     );
 }
 
@@ -297,4 +298,92 @@ fn default_config_path_lives_under_the_home_directory() {
     if home_dir().is_some() {
         assert!(path.to_string_lossy().contains(".eraser"));
     }
+}
+
+// -------------------------------------------------------------------
+// Sending providers
+// -------------------------------------------------------------------
+
+/// Upstream documented these in config.example.yaml and pulled both client
+/// libraries into go.mod, but its code rejected anything but smtp.
+#[test]
+fn an_api_provider_validates_with_only_a_key() {
+    let mut cfg = valid_config();
+    cfg.email.provider = "resend".into();
+    cfg.email.smtp = SmtpConfig::default();
+    cfg.email.resend.api_key = "re_abc".into();
+
+    assert!(cfg.validate().is_ok(), "no SMTP settings should be needed");
+}
+
+#[test]
+fn an_api_provider_without_a_key_is_rejected() {
+    for provider in ["resend", "sendgrid"] {
+        let mut cfg = valid_config();
+        cfg.email.provider = provider.into();
+
+        assert_eq!(
+            cfg.validate(),
+            Err(ValidationError::MissingApiKey(provider)),
+            "for {provider}"
+        );
+    }
+}
+
+#[test]
+fn smtp_still_requires_a_host_and_port() {
+    let mut cfg = valid_config();
+    cfg.email.resend.api_key = "re_abc".into();
+    cfg.email.smtp.host.clear();
+
+    assert_eq!(
+        cfg.validate(),
+        Err(ValidationError::MissingSmtpHost),
+        "a key for another provider must not excuse missing SMTP settings"
+    );
+}
+
+#[test]
+fn a_provider_that_does_not_exist_is_still_rejected() {
+    let mut cfg = valid_config();
+    cfg.email.provider = "carrier-pigeon".into();
+
+    assert_eq!(
+        cfg.validate(),
+        Err(ValidationError::UnknownProvider("carrier-pigeon".into()))
+    );
+}
+
+#[test]
+fn every_advertised_provider_can_be_configured() {
+    for provider in EMAIL_PROVIDERS {
+        let mut cfg = valid_config();
+        cfg.email.provider = (*provider).to_string();
+        cfg.email.resend.api_key = "re_abc".into();
+        cfg.email.sendgrid.api_key = "SG.abc".into();
+
+        assert!(cfg.validate().is_ok(), "{provider} should be usable");
+    }
+}
+
+/// An SMTP-only config should not grow empty resend and sendgrid sections.
+#[test]
+fn unused_provider_sections_are_left_out_of_the_file() {
+    let yaml = serde_norway::to_string(&valid_config()).unwrap();
+
+    assert!(!yaml.contains("resend"), "{yaml}");
+    assert!(!yaml.contains("sendgrid"), "{yaml}");
+}
+
+#[test]
+fn an_api_key_round_trips_through_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.yaml");
+
+    let mut original = valid_config();
+    original.email.provider = "resend".into();
+    original.email.resend.api_key = "re_abc123".into();
+
+    original.save(&path).unwrap();
+    assert_eq!(Config::load(&path).unwrap(), original);
 }

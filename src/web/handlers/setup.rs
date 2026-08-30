@@ -220,6 +220,7 @@ pub fn email_config_from(form: &EmailForm) -> EmailConfig {
             // to send credentials without it.
             use_tls: true,
         },
+        ..Default::default()
     }
 }
 
