@@ -37,6 +37,7 @@ pub fn render(
         minijinja::context! { ..context, ..minijinja::context! {
             signed_in_as => user.username(),
             show_nav => true,
+            configured => user.is_configured(),
         } },
     )
 }
@@ -66,10 +67,11 @@ fn render_inner(
 
     let base = minijinja::context! {
         csrf_token => token,
+        // A signed-out page has nobody whose settings could be complete.
+        configured => false,
         // The whole hidden input, so a form only has to name the field once,
         // here, rather than getting it wrong in each template.
         csrf_field => Value::from_safe_string(csrf_input(token)),
-        configured => state.is_configured(),
         version => env!("CARGO_PKG_VERSION"),
     };
 
@@ -97,16 +99,13 @@ pub fn csrf_of(request: &Request) -> Option<CsrfToken> {
     request.extensions().get::<CsrfToken>().cloned()
 }
 
-/// Send an unconfigured visitor to the setup wizard.
+/// Send a visitor who has not filled in the wizard to it.
 ///
 /// Go checked `config == nil || Profile.FirstName == ""` inline in each
-/// handler that needed it, and several handlers forgot.
-pub fn require_setup(state: &AppState) -> Option<Response> {
-    let has_profile = state
-        .config()
-        .is_some_and(|config| !config.profile.first_name.is_empty());
-
-    (!has_profile).then(|| Redirect::to("/setup").into_response())
+/// handler that needed it, and several handlers forgot. It is per person
+/// now: a second person joining an instance has their own wizard to do.
+pub fn require_setup(user: &super::auth::CurrentUser) -> Option<Response> {
+    (!user.has_profile()).then(|| Redirect::to("/setup").into_response())
 }
 
 /// Whether this request came from HTMX, which wants a fragment rather than a

@@ -4,7 +4,7 @@
 //! middleware, routing, and rendering are all covered. Nothing here touches
 //! a network or a real mailbox.
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request as HttpRequest, StatusCode, header};
@@ -76,11 +76,19 @@ async fn app_with(config: Option<Config>) -> (Router, AppState, tempfile::TempDi
         .await
         .expect("the first account should be claimable");
 
+    // Settings live in the database, one set per person, so the fixture
+    // config goes in the same way a real install's would.
+    if let Some(config) = &config {
+        store
+            .import_config(user.id, config)
+            .await
+            .expect("the settings should import");
+    }
+
     let sessions = SessionStore::new(session::DEFAULT_TTL);
     sessions.seed(TEST_SESSION, user.id);
 
     let state = AppState {
-        config: Arc::new(RwLock::new(config)),
         config_path: dir.path().join("config.yaml"),
         brokers: Arc::new(crate::broker::BrokerDatabase {
             brokers: vec![
@@ -865,7 +873,7 @@ async fn the_email_step_does_not_send_the_password_back_to_the_browser() {
 
 #[tokio::test]
 async fn finishing_the_wizard_writes_the_config_and_forgets_the_session() {
-    let (app, state, dir) = app_with(None).await;
+    let (app, state, _dir) = app_with(None).await;
     let session_id = signed_in_session(&state);
     let ready = configured();
     state.sessions.update(&session_id, |session| {
@@ -889,11 +897,15 @@ async fn finishing_the_wizard_writes_the_config_and_forgets_the_session() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        dir.path().join("config.yaml").exists(),
-        "the config should be on disk"
-    );
-    assert!(state.is_configured());
+
+    let stored = state
+        .store
+        .config_for(crate::history::DEFAULT_USER_ID)
+        .await
+        .expect("the stored settings");
+    assert_eq!(stored.profile.first_name, "Jane");
+    assert!(stored.validate().is_ok(), "it should be able to send");
+
     assert!(
         state.sessions.get(&session_id).is_none(),
         "the session held the password and should be gone"
@@ -953,10 +965,12 @@ async fn saving_inbox_settings_requires_an_address_and_a_password() {
 
     assert_eq!(response.status(), StatusCode::OK);
     assert!(body_of(response).await.contains("Enter the email address"));
-    assert!(
-        !state.config().unwrap().inbox.enabled,
-        "nothing should have been turned on"
-    );
+    let stored = state
+        .store
+        .config_for(crate::history::DEFAULT_USER_ID)
+        .await
+        .expect("the stored settings");
+    assert!(!stored.inbox.enabled, "nothing should have been turned on");
 }
 
 #[tokio::test]
@@ -982,7 +996,11 @@ async fn saving_inbox_settings_stores_them_and_fills_in_the_server() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    let config = state.config().unwrap();
+    let config = state
+        .store
+        .config_for(crate::history::DEFAULT_USER_ID)
+        .await
+        .expect("the stored settings");
     assert!(config.inbox.enabled);
     assert_eq!(config.inbox.email, "jane@gmail.com");
     assert_eq!(
@@ -1006,7 +1024,6 @@ async fn the_server_binds_and_shuts_down_cleanly() {
         // 0 asks the OS for a free port, so the test cannot collide with
         // anything already listening.
         0,
-        Some(configured()),
         dir.path().join("config.yaml"),
         crate::broker::BrokerDatabase::default(),
         store,
@@ -1045,7 +1062,6 @@ async fn a_port_already_in_use_is_reported_clearly() {
     let server = Server::new(
         "127.0.0.1",
         port,
-        Some(configured()),
         dir.path().join("config.yaml"),
         crate::broker::BrokerDatabase::default(),
         store,
@@ -1515,7 +1531,6 @@ async fn unclaimed_app() -> (Router, AppState, tempfile::TempDir) {
     let store = Store::open_in_memory().await.expect("an in-memory store");
 
     let state = AppState {
-        config: Arc::new(RwLock::new(Some(configured()))),
         config_path: dir.path().join("config.yaml"),
         brokers: Arc::new(crate::broker::BrokerDatabase {
             brokers: vec![broker("acme", "marketing", "us")],
@@ -1782,6 +1797,12 @@ async fn a_plain_form_post_with_the_rendered_token_is_accepted() {
 // Sending accounts
 // -------------------------------------------------------------------
 
+/// An install with no settings imported, so the only sending accounts are
+/// the ones the test adds.
+async fn accounts_app() -> (Router, AppState, tempfile::TempDir) {
+    app_with(None).await
+}
+
 /// Post a form the plain way, with the token in the body.
 async fn post_form(app: &Router, path: &str, fields: &[(&str, &str)]) -> Response {
     let (cookie, token) = csrf_pair(app).await;
@@ -1806,7 +1827,7 @@ async fn post_form(app: &Router, path: &str, fields: &[(&str, &str)]) -> Respons
 
 #[tokio::test]
 async fn the_accounts_page_explains_itself_when_there_are_none() {
-    let (app, _state, _dir) = app().await;
+    let (app, _state, _dir) = accounts_app().await;
 
     let body = body_of(get(&app, "/accounts").await).await;
 
@@ -1816,7 +1837,7 @@ async fn the_accounts_page_explains_itself_when_there_are_none() {
 
 #[tokio::test]
 async fn an_account_added_through_the_page_appears_on_it() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
 
     let response = post_form(
         &app,
@@ -1849,7 +1870,7 @@ async fn an_account_added_through_the_page_appears_on_it() {
 /// The password is stored, but it is never handed back to the browser.
 #[tokio::test]
 async fn the_page_does_not_show_the_password_back() {
-    let (app, _state, _dir) = app().await;
+    let (app, _state, _dir) = accounts_app().await;
     post_form(
         &app,
         "/accounts",
@@ -1866,7 +1887,7 @@ async fn the_page_does_not_show_the_password_back() {
 
 #[tokio::test]
 async fn an_account_is_personal_unless_the_box_was_ticked() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
     post_form(
         &app,
         "/accounts",
@@ -1890,7 +1911,7 @@ async fn an_account_is_personal_unless_the_box_was_ticked() {
 
 #[tokio::test]
 async fn a_family_account_says_everyone_can_use_it() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
     post_form(
         &app,
         "/accounts",
@@ -1916,7 +1937,7 @@ async fn a_family_account_says_everyone_can_use_it() {
 /// The whole reason for several accounts: the allowances add up.
 #[tokio::test]
 async fn the_page_totals_what_can_be_sent_today() {
-    let (app, _state, _dir) = app().await;
+    let (app, _state, _dir) = accounts_app().await;
 
     for (address, limit) in [("one@gmail.com", "40"), ("two@gmail.com", "60")] {
         post_form(
@@ -1937,7 +1958,7 @@ async fn the_page_totals_what_can_be_sent_today() {
 
 #[tokio::test]
 async fn a_form_with_a_problem_comes_back_saying_what_it_is() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
 
     let response = post_form(
         &app,
@@ -1963,7 +1984,7 @@ async fn a_form_with_a_problem_comes_back_saying_what_it_is() {
 
 #[tokio::test]
 async fn an_account_can_be_stopped_and_started_again() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
     post_form(
         &app,
         "/accounts",
@@ -1994,7 +2015,7 @@ async fn an_account_can_be_stopped_and_started_again() {
 
 #[tokio::test]
 async fn an_account_can_be_removed() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
     post_form(
         &app,
         "/accounts",
@@ -2029,7 +2050,7 @@ async fn an_account_can_be_removed() {
 /// because it is shared with the household.
 #[tokio::test]
 async fn another_persons_account_cannot_be_removed() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
     let other = state
         .store
         .create_user("housemate", "another-password")
@@ -2065,7 +2086,7 @@ async fn another_persons_account_cannot_be_removed() {
 /// it actually is.
 #[tokio::test]
 async fn a_shared_account_shows_who_owns_it() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
     let other = state
         .store
         .create_user("housemate", "another-password")
@@ -2094,7 +2115,7 @@ async fn a_shared_account_shows_who_owns_it() {
 /// A personal account belongs to one person and nobody else should see it.
 #[tokio::test]
 async fn another_persons_personal_account_is_not_listed() {
-    let (app, state, _dir) = app().await;
+    let (app, state, _dir) = accounts_app().await;
     let other = state
         .store
         .create_user("housemate", "another-password")

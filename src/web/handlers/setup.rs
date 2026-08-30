@@ -400,7 +400,7 @@ async fn send_test_message(session: &Session, recipient: &str) -> Result<(), Str
     })
 }
 
-/// Write the collected answers to disk and finish.
+/// Store the collected answers and finish.
 pub async fn complete(
     State(state): State<AppState>,
     user: CurrentUser,
@@ -412,20 +412,32 @@ pub async fn complete(
     let mut config = Config {
         profile: session.profile.clone(),
         email: session.email.clone(),
-        ..state.config().unwrap_or_default()
+        ..user.config().clone()
     };
     config.apply_defaults();
 
-    // Refuse to write a config that cannot send; finishing the wizard with a
-    // broken file just moves the failure somewhere less obvious.
+    // Refuse to store settings that cannot send; finishing the wizard with a
+    // broken setup just moves the failure somewhere less obvious.
     if let Err(problem) = config.validate() {
         return Err(WebError::BadRequest(format!(
             "Setup is not finished: {problem}"
         )));
     }
 
-    state.save_config(config)?;
-    // The session held the password; it is on disk now and has no further use.
+    // Everything the wizard collected belongs to this person, not the
+    // install: the profile goes in the letters, and the mailbox becomes
+    // theirs to send through.
+    state.store.save_profile(user.id(), &config.profile).await?;
+    state
+        .store
+        .save_settings(user.id(), &config.options, &config.inbox)
+        .await?;
+    state
+        .store
+        .add_sender_account(&sender_account_for(user.id(), &config))
+        .await?;
+
+    // The session held the password; it is stored now and has no further use.
     state.sessions.delete(&session_id);
 
     let mut response = render(
@@ -442,6 +454,25 @@ pub async fn complete(
     )?;
     clear_session_cookie(&mut response);
     Ok(response)
+}
+
+/// Turn the mailbox the wizard collected into a sending account.
+fn sender_account_for(user_id: i64, config: &Config) -> crate::history::NewSenderAccount {
+    crate::history::NewSenderAccount {
+        user_id,
+        label: "set up here".to_string(),
+        provider: config.email.provider.clone(),
+        from_address: config.email.from.clone(),
+        smtp: config.email.smtp.clone(),
+        api_key: match config.email.provider.as_str() {
+            "resend" => config.email.resend.api_key.clone(),
+            "sendgrid" => config.email.sendgrid.api_key.clone(),
+            _ => String::new(),
+        },
+        // The first one is the person's own. They can share it, or add a
+        // household mailbox, on the accounts page.
+        ..Default::default()
+    }
 }
 
 /// The wizard's own landing page, which just redirects into step one.

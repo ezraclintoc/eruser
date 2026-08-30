@@ -40,7 +40,9 @@ pub struct Args {
 }
 
 pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
-    let config = paths.load_config()?;
+    // Opened before anything else: the settings live in it.
+    let database = Store::open(Store::default_path()).await?;
+    let config = paths.settings_for(&database, DEFAULT_USER_ID).await?;
     config.validate()?;
 
     let db = paths.load_brokers()?;
@@ -85,10 +87,11 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
         return Ok(());
     }
 
+    // A dry run reads the settings but records nothing.
     let store = if args.dry_run {
         None
     } else {
-        Some(Store::open(Store::default_path()).await?)
+        Some(database.clone())
     };
 
     let options = SendOptions {
@@ -132,9 +135,7 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
         })
         .await;
 
-    if let Some(store) = store {
-        store.close().await;
-    }
+    database.close().await;
 
     // Some failures are normal across 764 community-maintained addresses, so
     // a partial failure still exits zero and stays usable from a script.

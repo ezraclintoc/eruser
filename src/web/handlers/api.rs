@@ -99,7 +99,7 @@ pub async fn send_one(
     user: CurrentUser,
     Path(broker_id): Path<String>,
 ) -> Result<Response, WebError> {
-    let config = state.config().ok_or(WebError::NotConfigured)?;
+    let config = user.config().clone();
     config.validate().map_err(|_| WebError::NotConfigured)?;
 
     let broker = state
@@ -181,7 +181,7 @@ pub async fn send_all(
         ));
     }
 
-    let job = start_send(&state, user.id(), brokers, &filters, query.limit).await?;
+    let job = start_send(&state, &user, brokers, &filters, query.limit).await?;
     Ok(Json(job.snapshot()).into_response())
 }
 
@@ -244,7 +244,7 @@ pub async fn resume_job(
         status: pending.status_filter.clone(),
     };
 
-    let job = start_send(&state, user.id(), brokers, &filters, pending.daily_limit).await?;
+    let job = start_send(&state, &user, brokers, &filters, pending.daily_limit).await?;
 
     // Carry the earlier totals across, so the progress bar continues rather
     // than restarting from zero.
@@ -259,7 +259,7 @@ pub async fn resume_job(
 /// exactly like a fresh one from here on.
 async fn start_send(
     state: &AppState,
-    user_id: i64,
+    user: &CurrentUser,
     brokers: Vec<crate::broker::Broker>,
     filters: &crate::web::views::BrokerFilters,
     limit: Option<usize>,
@@ -270,7 +270,7 @@ async fn start_send(
         return Err(WebError::JobAlreadyRunning);
     }
 
-    let config = state.config().ok_or(WebError::NotConfigured)?;
+    let config = user.config().clone();
     config.validate().map_err(|_| WebError::NotConfigured)?;
 
     let daily_limit = limit.unwrap_or(DEFAULT_DAILY_LIMIT);
@@ -296,7 +296,7 @@ async fn start_send(
 
     // Every account this person may send through, so a run rolls over
     // rather than stopping at one mailbox's daily cap.
-    let capacity = state.store.account_capacity(user_id).await?;
+    let capacity = state.store.account_capacity(user.id()).await?;
     let pool = if capacity.is_empty() {
         // Nothing configured as an account yet; fall back to whatever the
         // config file described.
@@ -321,15 +321,19 @@ async fn start_send(
         from: config.email.from.clone(),
         rate_limit: Duration::from_millis(config.options.rate_limit_ms),
         daily_limit: Some(daily_limit),
-        user_id,
+        user_id: user.id(),
     };
 
     let background = state.clone();
     let running = job.clone();
     let broker_ids: Vec<String> = brokers.iter().map(|b| b.id.clone()).collect();
 
+    let profile = config.profile.clone();
     tokio::spawn(async move {
-        run_send_job(background, running, brokers, broker_ids, pool, options).await;
+        run_send_job(
+            background, running, brokers, broker_ids, pool, options, profile,
+        )
+        .await;
     });
 
     Ok(job)
@@ -343,6 +347,7 @@ async fn run_send_job(
     broker_ids: Vec<String>,
     pool: crate::send::SenderPool,
     options: SendOptions,
+    profile: crate::config::Profile,
 ) {
     let cancel = job.cancellation_token();
     let persistence = state.job_persistence.clone();
@@ -353,7 +358,7 @@ async fn run_send_job(
 
     let pipeline = SendJob {
         brokers,
-        profile: state.config().unwrap_or_default().profile,
+        profile,
         engine: state.engine.clone(),
         pool,
         store: Some(state.store.clone()),
@@ -522,7 +527,7 @@ pub async fn inbox_scan(
     State(state): State<AppState>,
     user: CurrentUser,
 ) -> Result<Response, WebError> {
-    let config = state.config().ok_or(WebError::NotConfigured)?;
+    let config = user.config().clone();
     config
         .validate_inbox()
         .map_err(|problem| WebError::BadRequest(problem.to_string()))?;

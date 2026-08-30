@@ -562,7 +562,6 @@ async fn serve_refuses_a_host_that_is_not_an_address() {
     let result = crate::web::Server::new(
         "not-a-host",
         8080,
-        None,
         PathBuf::from("/tmp/eruser-test.yaml"),
         crate::broker::BrokerDatabase::default(),
         store,

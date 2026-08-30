@@ -22,11 +22,11 @@ pub async fn dashboard(
     user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
-    if let Some(redirect) = require_setup(&state) {
+    if let Some(redirect) = require_setup(&user) {
         return Ok(redirect);
     }
 
-    let config = state.config().unwrap_or_default();
+    let config = user.config().clone();
     let stats = Stats::new(
         state.brokers.brokers.len(),
         state.store.stats(user.id()).await?,
@@ -134,7 +134,7 @@ pub async fn settings(
         "settings.html",
         minijinja::context! {
             title => "Settings",
-            config => state.config(),
+            config => user.config(),
         },
     )
 }
@@ -148,7 +148,7 @@ pub async fn save_inbox_settings(
     let csrf = csrf_of(&request);
     let form: InboxForm = read_form(request).await?;
 
-    let message = match apply_inbox_settings(&state, &form) {
+    let message = match apply_inbox_settings(&state, &user, &form).await {
         Ok(()) => (
             "Inbox monitoring is on. Replies will be picked up from now on.",
             true,
@@ -163,7 +163,7 @@ pub async fn save_inbox_settings(
         "settings.html",
         minijinja::context! {
             title => "Settings",
-            config => state.config(),
+            config => user.config(),
             inbox_message => message.0,
             inbox_success => message.1,
         },
@@ -178,7 +178,28 @@ struct InboxForm {
 }
 
 /// Validate and store the inbox settings, returning what to tell the user.
-fn apply_inbox_settings(state: &AppState, form: &InboxForm) -> Result<(), &'static str> {
+///
+/// The mailbox belongs to the person, not the install: two people on one
+/// instance watch two different inboxes.
+async fn apply_inbox_settings(
+    state: &AppState,
+    user: &CurrentUser,
+    form: &InboxForm,
+) -> Result<(), &'static str> {
+    let mut config = user.config().clone();
+    config.inbox = inbox_from(form)?;
+    // Fills in the IMAP host and port that the provider implies.
+    config.apply_defaults();
+
+    state
+        .store
+        .save_settings(user.id(), &config.options, &config.inbox)
+        .await
+        .map_err(|_| "Could not save the settings. Check the terminal running eruser.")
+}
+
+/// The inbox settings a filled-in form describes.
+fn inbox_from(form: &InboxForm) -> Result<crate::config::InboxConfig, &'static str> {
     if form.inbox_email.trim().is_empty() {
         return Err("Enter the email address to watch.");
     }
@@ -186,20 +207,13 @@ fn apply_inbox_settings(state: &AppState, form: &InboxForm) -> Result<(), &'stat
         return Err("Enter an app password. Your normal account password will not work.");
     }
 
-    let mut config = state.config().unwrap_or_default();
-    config.inbox = crate::config::InboxConfig {
+    Ok(crate::config::InboxConfig {
         enabled: true,
         provider: "gmail".to_string(),
         email: form.inbox_email.trim().to_string(),
         password: form.inbox_password.clone(),
         ..Default::default()
-    };
-    // Fills in the IMAP host and port that the provider implies.
-    config.apply_defaults();
-
-    state
-        .save_config(config)
-        .map_err(|_| "Could not save the settings. Check the terminal running eruser.")
+    })
 }
 
 pub async fn pipeline(
@@ -207,7 +221,7 @@ pub async fn pipeline(
     user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
-    if let Some(redirect) = require_setup(&state) {
+    if let Some(redirect) = require_setup(&user) {
         return Ok(redirect);
     }
 
@@ -222,9 +236,7 @@ pub async fn pipeline(
         )
         .await?;
 
-    let inbox_configured = state
-        .config()
-        .is_some_and(|config| config.validate_inbox().is_ok());
+    let inbox_configured = user.config().validate_inbox().is_ok();
 
     render(
         &state,
@@ -249,7 +261,7 @@ pub async fn tasks(
     user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
-    if let Some(redirect) = require_setup(&state) {
+    if let Some(redirect) = require_setup(&user) {
         return Ok(redirect);
     }
 
@@ -335,7 +347,7 @@ pub async fn forms(
     user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
-    if let Some(redirect) = require_setup(&state) {
+    if let Some(redirect) = require_setup(&user) {
         return Ok(redirect);
     }
 
@@ -396,7 +408,7 @@ pub async fn task_helper(
     // distinguishable from "never looked at".
     state.store.mark_task_opened(user.id(), task_id).await?;
 
-    let config = state.config().unwrap_or_default();
+    let config = user.config().clone();
 
     render(
         &state,

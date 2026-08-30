@@ -155,6 +155,35 @@ impl Paths {
         }
         Ok(Config::load(path)?)
     }
+
+    /// The settings a command should act on.
+    ///
+    /// Settings live in the database now, one set per person, so that the
+    /// web interface can have several people on one instance. A `config.yaml`
+    /// left over from before is moved across the first time it is seen, and
+    /// after that the file is only a starting point — editing the database
+    /// is not undone by a stale file.
+    pub async fn settings_for(
+        &self,
+        store: &crate::history::Store,
+        user_id: i64,
+    ) -> Result<Config, Error> {
+        let path = self.config_path();
+        if path.exists()
+            && let Ok(config) = Config::load(&path)
+        {
+            store.import_config(user_id, &config).await?;
+        }
+
+        let config = store.config_for(user_id).await?;
+        if config.profile.first_name.is_empty() && config.email.from.is_empty() {
+            // Nothing in the database and nothing usable on disk: this
+            // install has not been set up at all.
+            return Err(Error::NoConfig { path });
+        }
+
+        Ok(config)
+    }
 }
 
 /// `./data/brokers.yaml`, or the same path beside the executable.

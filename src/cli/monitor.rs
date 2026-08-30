@@ -33,8 +33,10 @@ impl Default for Args {
 }
 
 pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
-    let config = paths.load_config()?;
     let store = Store::open(Store::default_path()).await?;
+    let config = paths
+        .settings_for(&store, crate::history::DEFAULT_USER_ID)
+        .await?;
 
     if args.reclassify {
         let changed = scan::reclassify_stored(&store, crate::history::DEFAULT_USER_ID).await?;

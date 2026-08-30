@@ -5,7 +5,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::{delete, get, post};
@@ -22,7 +22,6 @@ pub mod templates;
 pub mod views;
 
 use crate::broker::BrokerDatabase;
-use crate::config::Config;
 use crate::history::Store;
 use crate::template::Engine;
 
@@ -65,7 +64,6 @@ impl Server {
     pub fn new(
         host: &str,
         port: u16,
-        config: Option<Config>,
         config_path: PathBuf,
         brokers: BrokerDatabase,
         store: Store,
@@ -79,7 +77,6 @@ impl Server {
             .unwrap_or_else(|| PathBuf::from("."));
 
         let state = AppState {
-            config: Arc::new(RwLock::new(config)),
             config_path,
             brokers: Arc::new(brokers),
             store,

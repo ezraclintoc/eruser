@@ -1,7 +1,7 @@
 //! `eruser serve` — start the local web interface.
 
 use super::{Error, Paths};
-use crate::history::Store;
+use crate::history::{DEFAULT_USER_ID, Store};
 use crate::template::Engine;
 use crate::web::Server;
 
@@ -11,9 +11,9 @@ pub struct Args {
     #[arg(long, short, default_value_t = 8080)]
     pub port: u16,
 
-    /// Address to bind. Leave this at localhost unless you understand the
-    /// consequences: the interface has no authentication yet, so anything
-    /// that can reach it can read your profile and send mail as you.
+    /// Address to bind. The interface asks for a password, but it speaks
+    /// plain HTTP, so put it behind a reverse proxy with TLS before exposing
+    /// it beyond this machine.
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
 
@@ -61,10 +61,23 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
     let store = Store::open(Store::default_path()).await?;
     let engine = Engine::new()?;
 
+    // An install from before the database held settings has them in
+    // config.yaml. Move them across once, so the first person to sign in
+    // finds their profile and mailbox already there. Editing the database
+    // afterwards is not undone by the file still sitting on disk.
+    if let Some(config) = &config
+        && store.import_config(DEFAULT_USER_ID, config).await?
+    {
+        println!(
+            "Moved the settings from {} into the database.",
+            config_path.display()
+        );
+        println!();
+    }
+
     let server = Server::new(
         &args.host,
         args.port,
-        config,
         config_path,
         brokers,
         store.clone(),
@@ -91,9 +104,9 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
     println!("eruser is running at {url}");
     if args.host != "127.0.0.1" && args.host != "localhost" {
         println!();
-        println!("Warning: this is reachable from outside this machine, and the");
-        println!("interface has no password. Anyone who can reach it can read your");
-        println!("details and send mail from your account.");
+        println!("Warning: this is reachable from outside this machine over plain");
+        println!("HTTP, so the password is sent in the clear. Put it behind a");
+        println!("reverse proxy with TLS.");
     }
     println!("Press Ctrl-C to stop.");
 

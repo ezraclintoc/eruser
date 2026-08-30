@@ -14,6 +14,7 @@ use super::error::WebError;
 use super::security::cookie_value;
 use super::session::COOKIE_NAME;
 use super::state::AppState;
+use crate::config::Config;
 use crate::history::User;
 
 /// Paths reachable without signing in.
@@ -32,16 +33,42 @@ pub fn is_public(path: &str) -> bool {
 /// Extracting this is what proves a request is authenticated: a handler that
 /// takes one cannot run for a visitor who is not signed in, so authorisation
 /// is not something a handler can forget to check.
+///
+/// It carries their settings as well as their name. Go read one config file
+/// for the whole install; here each person has their own profile and their
+/// own mailboxes, so the settings are part of knowing who is asking.
 #[derive(Debug, Clone)]
-pub struct CurrentUser(pub User);
+pub struct CurrentUser {
+    user: User,
+    config: Config,
+}
 
 impl CurrentUser {
     pub fn id(&self) -> i64 {
-        self.0.id
+        self.user.id
     }
 
     pub fn username(&self) -> &str {
-        &self.0.username
+        &self.user.username
+    }
+
+    /// This person's settings, assembled from the database.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    /// Whether they have said enough about themselves to send anything.
+    pub fn is_configured(&self) -> bool {
+        !self.config.profile.first_name.is_empty() && self.config.validate().is_ok()
+    }
+
+    /// Whether they have filled in the wizard at all.
+    ///
+    /// Separate from [`Self::is_configured`]: someone can have a profile and
+    /// no working mailbox, and should be sent to the accounts page rather
+    /// than back through the wizard.
+    pub fn has_profile(&self) -> bool {
+        !self.config.profile.first_name.is_empty()
     }
 }
 
@@ -49,7 +76,7 @@ impl std::ops::Deref for CurrentUser {
     type Target = User;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.user
     }
 }
 
@@ -110,8 +137,14 @@ pub async fn require_sign_in(
         return Ok(Redirect::to("/login").into_response());
     };
 
+    // Read their settings here rather than in each handler, so a page and
+    // the API it calls cannot disagree about what is configured.
+    let config = state.store.config_for(user.id).await?;
+
     let mut request = request;
-    request.extensions_mut().insert(CurrentUser(user));
+    request
+        .extensions_mut()
+        .insert(CurrentUser { user, config });
     Ok(next.run(request).await)
 }
 
