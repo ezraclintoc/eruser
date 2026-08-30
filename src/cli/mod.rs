@@ -12,6 +12,7 @@ use clap::{Parser, Subcommand};
 use crate::broker::BrokerDatabase;
 use crate::config::{self, Config};
 
+pub(crate) mod accounts;
 pub(crate) mod add_broker;
 pub(crate) mod confirm;
 pub(crate) mod fill;
@@ -22,6 +23,7 @@ mod prompt;
 pub(crate) mod send;
 pub(crate) mod serve;
 pub(crate) mod status;
+pub(crate) mod users;
 
 pub use serve::ServeError;
 
@@ -78,6 +80,14 @@ pub enum Command {
 
     /// Start the local web interface
     Serve(serve::Args),
+
+    /// Manage the accounts people sign in with
+    #[command(subcommand)]
+    Users(users::Command),
+
+    /// Manage the mailboxes requests are sent from
+    #[command(subcommand)]
+    Accounts(accounts::Command),
 }
 
 impl Cli {
@@ -97,6 +107,8 @@ impl Cli {
             Command::Confirm(args) => confirm::run(&paths, args).await,
             Command::Fill(args) => fill::run(&paths, args).await,
             Command::Serve(args) => serve::run(&paths, args).await,
+            Command::Users(command) => users::run(&paths, command).await,
+            Command::Accounts(command) => accounts::run(&paths, command).await,
         }
     }
 }
@@ -210,6 +222,30 @@ pub enum Error {
 
     #[error("cancelled")]
     Cancelled,
+
+    #[error("the two passwords are not the same")]
+    PasswordsDiffer,
+
+    #[error(
+        "that is the only account left\n\nAn instance with no accounts cannot be signed into. Add another account\nfirst if you meant to replace this one."
+    )]
+    LastAccount,
+
+    #[error(
+        "there are several accounts here, so this needs to say which one\n\nPass --user with one of: {names}"
+    )]
+    AmbiguousUser { names: String },
+
+    #[error("no sending account here uses {address}\n\n`eruser accounts` lists them.")]
+    NoSuchSenderAccount { address: String },
+
+    #[error(
+        "there is no SMTP server known for {address}\n\nPass --host with your provider's server, e.g. --host smtp.example.com."
+    )]
+    MissingSmtpHost { address: String },
+
+    #[error("{provider} is not a way of sending\n\nUse smtp, resend, or sendgrid.")]
+    UnknownProvider { provider: String },
 }
 
 #[cfg(test)]
