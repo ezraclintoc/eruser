@@ -1009,3 +1009,157 @@ async fn a_port_already_in_use_is_reported_clearly() {
     assert!(message.contains(&port.to_string()), "{message}");
     assert!(message.contains("another program"), "{message}");
 }
+
+// -------------------------------------------------------------------
+// Resuming an interrupted send
+// -------------------------------------------------------------------
+
+fn interrupted_run(remaining: &[&str]) -> crate::web::job::PendingJob {
+    crate::web::job::PendingJob {
+        id: "job-1".into(),
+        status: crate::web::job::JobStatus::Running,
+        sent: 250,
+        failed: 3,
+        total: 400,
+        started_at: chrono::Utc::now(),
+        remaining_brokers: remaining.iter().map(|id| (*id).to_string()).collect(),
+        search: String::new(),
+        category: String::new(),
+        region: String::new(),
+        status_filter: String::new(),
+        daily_limit: Some(250),
+    }
+}
+
+#[tokio::test]
+async fn nothing_is_pending_on_a_fresh_install() {
+    let (app, _state, _dir) = app().await;
+    let body = body_of(get(&app, "/api/job/pending").await).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+
+    assert_eq!(json["pending"], false);
+}
+
+/// The file was already being written on every broker; until now nothing
+/// ever read it back, so an interrupted run was simply lost.
+#[tokio::test]
+async fn an_interrupted_run_is_reported_as_pending() {
+    let (app, state, _dir) = app().await;
+    state
+        .job_persistence
+        .save(&interrupted_run(&["acme", "globex"]))
+        .unwrap();
+
+    let body = body_of(get(&app, "/api/job/pending").await).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+
+    assert_eq!(json["pending"], true);
+    assert_eq!(json["remaining"], 2);
+    assert_eq!(json["sent"], 250);
+}
+
+#[tokio::test]
+async fn a_finished_run_is_not_reported_as_pending() {
+    let (app, state, _dir) = app().await;
+    state.job_persistence.save(&interrupted_run(&[])).unwrap();
+
+    let body = body_of(get(&app, "/api/job/pending").await).await;
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["pending"], false);
+}
+
+async fn post(app: &Router, path: &str) -> Response {
+    let (cookie, token) = csrf_pair(app).await;
+    app.clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri(path)
+                .header(header::COOKIE, cookie)
+                .header(CSRF_HEADER, token)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn resuming_with_nothing_pending_says_so() {
+    let (app, _state, _dir) = app().await;
+    let response = post(&app, "/api/job/resume").await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_of(response).await.contains("nothing to resume"));
+}
+
+/// Resuming carries the earlier totals across, so the progress bar continues
+/// rather than restarting and reading as though the work was lost.
+#[tokio::test]
+async fn resuming_continues_the_earlier_totals() {
+    let (app, state, _dir) = app().await;
+    state
+        .job_persistence
+        .save(&interrupted_run(&["acme", "globex"]))
+        .unwrap();
+
+    let response = post(&app, "/api/job/resume").await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let snapshot: serde_json::Value = serde_json::from_str(&body_of(response).await).unwrap();
+    assert_eq!(snapshot["sent"], 250);
+    assert_eq!(snapshot["failed"], 3);
+    assert_eq!(
+        snapshot["total"], 255,
+        "the two remaining brokers plus what was already done"
+    );
+}
+
+/// A broker taken out of brokers.yaml since the run started should be
+/// skipped, not stop the resume.
+#[tokio::test]
+async fn a_broker_that_no_longer_exists_is_skipped_when_resuming() {
+    let (app, state, _dir) = app().await;
+    state
+        .job_persistence
+        .save(&interrupted_run(&["acme", "deleted-since"]))
+        .unwrap();
+
+    let response = post(&app, "/api/job/resume").await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let snapshot: serde_json::Value = serde_json::from_str(&body_of(response).await).unwrap();
+    // 253 already handled, plus the one broker still in the database.
+    assert_eq!(snapshot["total"], 254);
+}
+
+#[tokio::test]
+async fn resuming_a_run_of_brokers_that_all_vanished_reports_it() {
+    let (app, state, _dir) = app().await;
+    state
+        .job_persistence
+        .save(&interrupted_run(&["gone", "also-gone"]))
+        .unwrap();
+
+    let response = post(&app, "/api/job/resume").await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(body_of(response).await.contains("still in the database"));
+
+    // The file is cleared, so it does not linger forever.
+    assert!(state.job_persistence.load().is_none());
+}
+
+#[tokio::test]
+async fn resuming_while_a_send_is_already_running_is_refused() {
+    let (app, state, _dir) = app().await;
+    state
+        .job_persistence
+        .save(&interrupted_run(&["acme"]))
+        .unwrap();
+    let _running = state.jobs.create(10, None);
+
+    assert_eq!(
+        post(&app, "/api/job/resume").await.status(),
+        StatusCode::CONFLICT
+    );
+}

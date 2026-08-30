@@ -184,6 +184,17 @@ impl Job {
         self.lock().consecutive_auth_failures = 0;
     }
 
+    /// Fold in the totals from an earlier attempt at the same run.
+    ///
+    /// Without this a resumed run reports progress from zero, which reads as
+    /// though the work already done has been lost.
+    pub fn adopt_totals(&self, sent: usize, failed: usize) {
+        let mut state = self.lock();
+        state.sent += sent;
+        state.failed += failed;
+        state.total += sent + failed;
+    }
+
     pub fn status(&self) -> JobStatus {
         self.lock().status
     }
@@ -317,6 +328,9 @@ pub struct PendingJob {
     pub region: String,
     #[serde(default)]
     pub status_filter: String,
+    /// The cap the run started with, so resuming keeps it.
+    #[serde(default)]
+    pub daily_limit: Option<usize>,
 }
 
 /// Reads and writes the pending job file.

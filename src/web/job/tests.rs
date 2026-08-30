@@ -206,6 +206,7 @@ fn pending() -> PendingJob {
         category: "marketing".into(),
         region: "us".into(),
         status_filter: "never".into(),
+        daily_limit: Some(250),
     }
 }
 

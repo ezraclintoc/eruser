@@ -181,6 +181,8 @@ pub fn router(state: AppState) -> Router {
         .route("/send/{broker_id}", post(handlers::api::send_one))
         .route("/send-all", post(handlers::api::send_all))
         .route("/job/active", get(handlers::api::active_job))
+        .route("/job/pending", get(handlers::api::pending_job))
+        .route("/job/resume", post(handlers::api::resume_job))
         .route("/job/{job_id}/status", get(handlers::api::job_status))
         .route("/job/{job_id}/cancel", post(handlers::api::cancel_job))
         .route("/pipeline/stats", get(handlers::api::pipeline_stats))

@@ -71,6 +71,22 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
         engine,
     )?;
 
+    // Say plainly that a run was interrupted, rather than either resuming it
+    // silently or leaving the file unmentioned. Upstream resumed two seconds
+    // after startup, which meant opening the interface could put hundreds of
+    // emails on the wire without anyone asking for it.
+    if let Some(pending) = server.state().job_persistence.load()
+        && !pending.remaining_brokers.is_empty()
+    {
+        println!(
+            "A previous send stopped with {} of {} brokers left.",
+            pending.remaining_brokers.len(),
+            pending.total
+        );
+        println!("Resume it from the dashboard when you are ready.");
+        println!();
+    }
+
     let url = format!("http://{}:{}", display_host(&args.host), args.port);
     println!("eruser is running at {url}");
     if args.host != "127.0.0.1" && args.host != "localhost" {

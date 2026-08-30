@@ -149,15 +149,6 @@ pub async fn send_all(
     State(state): State<AppState>,
     Query(query): Query<SendAllQuery>,
 ) -> Result<Response, WebError> {
-    // Two concurrent runs would both count against the same daily limit and
-    // interleave their progress, so only one at a time.
-    if state.jobs.active().is_some() {
-        return Err(WebError::JobAlreadyRunning);
-    }
-
-    let config = state.config().ok_or(WebError::NotConfigured)?;
-    config.validate().map_err(|_| WebError::NotConfigured)?;
-
     let filters = query.filters.normalized();
     let statuses = state.store.all_broker_statuses(state.user_id).await?;
 
@@ -177,7 +168,92 @@ pub async fn send_all(
         ));
     }
 
-    let daily_limit = query.limit.unwrap_or(DEFAULT_DAILY_LIMIT);
+    let job = start_send(&state, brokers, &filters, query.limit).await?;
+    Ok(Json(job.snapshot()).into_response())
+}
+
+/// What is left of a run that stopped before it finished.
+pub async fn pending_job(State(state): State<AppState>) -> Response {
+    match state.job_persistence.load() {
+        Some(pending) if !pending.remaining_brokers.is_empty() => Json(json!({
+            "pending": true,
+            "remaining": pending.remaining_brokers.len(),
+            "sent": pending.sent,
+            "failed": pending.failed,
+            "total": pending.total,
+            "started_at": pending.started_at,
+        }))
+        .into_response(),
+        _ => Json(json!({ "pending": false })).into_response(),
+    }
+}
+
+/// Continue a run that stopped before it finished.
+///
+/// Deliberately something you ask for. Upstream resumed automatically two
+/// seconds after the server started, which meant opening the interface could
+/// put hundreds of emails on the wire without anyone saying so.
+pub async fn resume_job(State(state): State<AppState>) -> Result<Response, WebError> {
+    let Some(pending) = state.job_persistence.load() else {
+        return Err(WebError::BadRequest("There is nothing to resume.".into()));
+    };
+    if pending.remaining_brokers.is_empty() {
+        // Nothing left in it; clear the file rather than leave it lying around.
+        let _ = state.job_persistence.clear();
+        return Err(WebError::BadRequest("There is nothing to resume.".into()));
+    }
+
+    // Resolve the ids against the database as it is now. A broker removed
+    // from brokers.yaml since the run started is simply skipped.
+    let brokers: Vec<_> = pending
+        .remaining_brokers
+        .iter()
+        .filter_map(|id| state.brokers.find_by_id(id).cloned())
+        .collect();
+
+    if brokers.is_empty() {
+        let _ = state.job_persistence.clear();
+        return Err(WebError::BadRequest(
+            "None of the brokers left in that run are still in the database.".into(),
+        ));
+    }
+
+    let filters = crate::web::views::BrokerFilters {
+        search: pending.search.clone(),
+        category: pending.category.clone(),
+        region: pending.region.clone(),
+        status: pending.status_filter.clone(),
+    };
+
+    let job = start_send(&state, brokers, &filters, pending.daily_limit).await?;
+
+    // Carry the earlier totals across, so the progress bar continues rather
+    // than restarting from zero.
+    job.adopt_totals(pending.sent, pending.failed);
+
+    Ok(Json(job.snapshot()).into_response())
+}
+
+/// Create a job, record what it has to do, and set it running.
+///
+/// Shared by starting a run and resuming one, so a resumed run behaves
+/// exactly like a fresh one from here on.
+async fn start_send(
+    state: &AppState,
+    brokers: Vec<crate::broker::Broker>,
+    filters: &crate::web::views::BrokerFilters,
+    limit: Option<usize>,
+) -> Result<crate::web::job::Job, WebError> {
+    // Two concurrent runs would both count against the same daily limit and
+    // interleave their progress, so only one at a time.
+    if state.jobs.active().is_some() {
+        return Err(WebError::JobAlreadyRunning);
+    }
+
+    let config = state.config().ok_or(WebError::NotConfigured)?;
+    config.validate().map_err(|_| WebError::NotConfigured)?;
+
+    let daily_limit = limit.unwrap_or(DEFAULT_DAILY_LIMIT);
     let job = state.jobs.create(brokers.len(), Some(daily_limit));
     let snapshot = job.snapshot();
 
@@ -195,6 +271,7 @@ pub async fn send_all(
         category: filters.category.clone(),
         region: filters.region.clone(),
         status_filter: filters.status.clone(),
+        daily_limit: Some(daily_limit),
     })?;
 
     let sender = sender_for(&config.email, false)?;
@@ -214,7 +291,7 @@ pub async fn send_all(
         run_send_job(background, running, brokers, broker_ids, sender, options).await;
     });
 
-    Ok(Json(job.snapshot()).into_response())
+    Ok(job)
 }
 
 /// Drive one background send, keeping the job and the resume file current.
@@ -231,6 +308,7 @@ async fn run_send_job(
     let started_at = job.snapshot().started_at;
     let total = brokers.len();
     let job_id = job.id().to_string();
+    let options_daily_limit = options.daily_limit;
 
     let pipeline = SendJob {
         brokers,
@@ -294,6 +372,7 @@ async fn run_send_job(
                 category: String::new(),
                 region: String::new(),
                 status_filter: String::new(),
+                daily_limit: options_daily_limit,
             }) {
                 tracing::warn!(%error, "could not save send progress");
             }
