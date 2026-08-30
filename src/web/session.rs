@@ -22,6 +22,11 @@ pub const COOKIE_NAME: &str = "eruser_session";
 /// Wizard state held on the server.
 #[derive(Debug, Clone, Default)]
 pub struct Session {
+    /// Who signed in on this session, once anyone has.
+    ///
+    /// The setup wizard uses a session before anyone is signed in, so this
+    /// stays None until a sign-in succeeds.
+    pub user_id: Option<i64>,
     pub step: String,
     pub profile: Profile,
     pub email: EmailConfig,
@@ -113,6 +118,25 @@ impl SessionStore {
         apply(session);
         session.expires_at = Some(now + self.ttl);
         true
+    }
+
+    /// Put a session with a known id in place.
+    ///
+    /// Only for tests: a real id is random so it cannot be guessed, which
+    /// makes it awkward for a test to present one on a request it builds by
+    /// hand.
+    #[cfg(test)]
+    pub fn seed(&self, id: &str, user_id: i64) {
+        let now = Utc::now();
+        self.lock().insert(
+            id.to_string(),
+            Session {
+                user_id: Some(user_id),
+                created_at: Some(now),
+                expires_at: Some(now + self.ttl),
+                ..Session::default()
+            },
+        );
     }
 
     pub fn delete(&self, id: &str) {

@@ -12,6 +12,12 @@ pub enum WebError {
     #[error("page not found")]
     NotFound,
 
+    #[error("you need to sign in first")]
+    NotSignedIn,
+
+    #[error(transparent)]
+    Account(#[from] crate::history::AccountError),
+
     #[error("{0}")]
     BadRequest(String),
 
@@ -53,6 +59,9 @@ impl WebError {
     pub fn status(&self) -> StatusCode {
         match self {
             Self::NotFound => StatusCode::NOT_FOUND,
+            Self::NotSignedIn => StatusCode::UNAUTHORIZED,
+            // Something the person typed, not a fault.
+            Self::Account(_) => StatusCode::BAD_REQUEST,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::InvalidCsrf => StatusCode::FORBIDDEN,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
@@ -71,6 +80,8 @@ impl WebError {
     pub fn user_message(&self) -> String {
         match self {
             Self::NotFound
+            | Self::NotSignedIn
+            | Self::Account(_)
             | Self::BadRequest(_)
             | Self::InvalidCsrf
             | Self::RateLimited

@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="min-h-[70vh] flex items-center justify-center py-8">
+    <div class="max-w-sm w-full fade-in-up">
+        <div class="card p-8">
+            <div class="text-center mb-8">
+                <div class="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center" style="background: var(--accent-muted);">
+                    <svg class="w-7 h-7 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                </div>
+                <h1 class="font-display text-2xl font-bold text-primary mb-2">Sign in</h1>
+                <p class="text-secondary text-sm">This instance is shared, so it asks who you are.</p>
+            </div>
+
+            {% if error %}
+            <div class="mb-6 p-3 rounded-xl text-sm" style="background: rgba(244, 63, 94, 0.1); color: var(--error); border: 1px solid rgba(244, 63, 94, 0.3);">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/login" class="space-y-5">
+                {{ csrf_field }}
+
+                <div>
+                    <label for="username" class="label">Name</label>
+                    <input type="text" name="username" id="username" required autofocus
+                        autocomplete="username"
+                        value="{{ username }}"
+                        class="input"
+                        placeholder="your name">
+                </div>
+
+                <div>
+                    <label for="password" class="label">Password</label>
+                    <input type="password" name="password" id="password" required
+                        autocomplete="current-password"
+                        class="input"
+                        placeholder="••••••••">
+                </div>
+
+                <button type="submit" class="btn btn-primary w-full">Sign in</button>
+            </form>
+        </div>
+
+        <p class="text-center text-sm text-muted mt-6">
+            Forgotten the password? There is no reset by email — nothing here
+            can send you one you would trust. Run
+            <code class="text-secondary">eruser users set-password &lt;name&gt;</code>
+            on the machine hosting this.
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -19,6 +19,14 @@ use crate::web::security::{CSRF_COOKIE, CSRF_HEADER, cookie_value};
 
 const PORT: u16 = 8080;
 
+/// The account every test signs in as.
+const TEST_USER: &str = "tester";
+const TEST_PASSWORD: &str = "test-password";
+
+/// A session id the tests can present without having to read it back out of
+/// a Set-Cookie header first.
+const TEST_SESSION: &str = "0123456789abcdef0123456789abcdef";
+
 fn broker(id: &str, category: &str, region: &str) -> Broker {
     Broker {
         id: id.to_string(),
@@ -63,6 +71,14 @@ async fn app_with(config: Option<Config>) -> (Router, AppState, tempfile::TempDi
     let dir = tempfile::tempdir().expect("a scratch directory");
     let store = Store::open_in_memory().await.expect("an in-memory store");
 
+    let user = store
+        .claim_first_user(TEST_USER, TEST_PASSWORD)
+        .await
+        .expect("the first account should be claimable");
+
+    let sessions = SessionStore::new(session::DEFAULT_TTL);
+    sessions.seed(TEST_SESSION, user.id);
+
     let state = AppState {
         config: Arc::new(RwLock::new(config)),
         config_path: dir.path().join("config.yaml"),
@@ -74,13 +90,12 @@ async fn app_with(config: Option<Config>) -> (Router, AppState, tempfile::TempDi
         }),
         store,
         engine: Arc::new(crate::template::Engine::new().expect("email templates")),
-        sessions: SessionStore::new(session::DEFAULT_TTL),
+        sessions,
         rate_limiter: RateLimiter::new(10_000, std::time::Duration::from_secs(60)),
         jobs: JobManager::new(),
         job_persistence: JobPersistence::new(dir.path()),
         templates: Arc::new(templates::build().expect("page templates")),
         port: PORT,
-        user_id: DEFAULT_USER_ID,
     };
 
     (router(state.clone()), state, dir)
@@ -90,11 +105,36 @@ async fn app() -> (Router, AppState, tempfile::TempDir) {
     app_with(Some(configured())).await
 }
 
+/// A wizard session that is also signed in.
+///
+/// The wizard keeps its answers in a session, and that same session is the
+/// one carrying the sign-in, so a test driving the wizard needs both on one
+/// id.
+fn signed_in_session(state: &AppState) -> String {
+    let id = state.sessions.create();
+    state.sessions.update(&id, |session| {
+        session.user_id = Some(crate::history::DEFAULT_USER_ID);
+    });
+    id
+}
+
+/// The cookie that says a request is signed in.
+fn session_cookie() -> String {
+    format!("{}={TEST_SESSION}", session::COOKIE_NAME)
+}
+
+/// The session cookie alongside another one, since a browser sends them all
+/// in a single header and the server only reads the first.
+fn with_session(cookie: &str) -> String {
+    format!("{cookie}; {}", session_cookie())
+}
+
 async fn get(app: &Router, path: &str) -> Response {
     app.clone()
         .oneshot(
             HttpRequest::builder()
                 .uri(path)
+                .header(header::COOKIE, session_cookie())
                 .body(Body::empty())
                 .expect("a valid request"),
         )
@@ -111,7 +151,17 @@ async fn body_of(response: Response) -> String {
 
 /// The CSRF token minted on a GET, which a POST has to echo back.
 async fn csrf_pair(app: &Router) -> (String, String) {
-    let response = get(app, "/settings").await;
+    token_from(get(app, "/settings").await)
+}
+
+/// The same, from a page reachable without signing in — the login form and
+/// the first-run page mint their own token, and `/settings` would only
+/// redirect.
+async fn csrf_pair_at(app: &Router, path: &str) -> (String, String) {
+    token_from(get_signed_out(app, path).await)
+}
+
+fn token_from(response: Response) -> (String, String) {
     // A response may carry several Set-Cookie headers; find ours.
     let cookie = response
         .headers()
@@ -214,6 +264,7 @@ async fn an_htmx_request_gets_the_fragment_not_the_whole_page() {
             HttpRequest::builder()
                 .uri("/brokers?search=acme")
                 .header("hx-request", "true")
+                .header(header::COOKIE, session_cookie())
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -368,6 +419,7 @@ async fn a_post_without_a_token_is_refused() {
             HttpRequest::builder()
                 .method("POST")
                 .uri("/api/send-all")
+                .header(header::COOKIE, session_cookie())
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -388,7 +440,7 @@ async fn a_post_with_the_wrong_token_is_refused() {
             HttpRequest::builder()
                 .method("POST")
                 .uri("/api/send-all")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(CSRF_HEADER, "0".repeat(64))
                 .body(Body::empty())
                 .unwrap(),
@@ -410,7 +462,7 @@ async fn a_post_with_the_matching_token_is_allowed_through() {
             HttpRequest::builder()
                 .method("DELETE")
                 .uri("/api/history/failed")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(CSRF_HEADER, token)
                 .body(Body::empty())
                 .unwrap(),
@@ -434,7 +486,7 @@ async fn a_post_from_another_origin_is_refused() {
             HttpRequest::builder()
                 .method("DELETE")
                 .uri("/api/history/failed")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(CSRF_HEADER, token)
                 .header(header::ORIGIN, "http://evil.example")
                 .body(Body::empty())
@@ -535,7 +587,7 @@ async fn scanning_without_inbox_settings_explains_what_is_missing() {
             HttpRequest::builder()
                 .method("POST")
                 .uri("/api/inbox/scan")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(CSRF_HEADER, token)
                 .body(Body::empty())
                 .unwrap(),
@@ -574,7 +626,7 @@ async fn stored_replies_can_be_reclassified_without_a_mailbox() {
             HttpRequest::builder()
                 .method("POST")
                 .uri("/api/inbox/reclassify")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(CSRF_HEADER, token)
                 .body(Body::empty())
                 .unwrap(),
@@ -615,7 +667,7 @@ async fn only_one_send_runs_at_a_time() {
             HttpRequest::builder()
                 .method("POST")
                 .uri("/api/send-all")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(CSRF_HEADER, token)
                 .body(Body::empty())
                 .unwrap(),
@@ -637,7 +689,7 @@ async fn sending_before_setup_is_refused() {
             HttpRequest::builder()
                 .method("POST")
                 .uri("/api/send-all")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(CSRF_HEADER, token)
                 .body(Body::empty())
                 .unwrap(),
@@ -702,7 +754,7 @@ async fn a_wizard_page_starts_a_session() {
 async fn a_submitted_profile_is_kept_and_moves_to_the_next_step() {
     let (app, state, _dir) = app_with(None).await;
     let (csrf_cookie, token) = csrf_pair(&app).await;
-    let session_id = state.sessions.create();
+    let session_id = signed_in_session(&state);
 
     let form = format!("first_name=Jane&last_name=Doe&email=jane%40example.com&csrf_token={token}");
 
@@ -743,7 +795,7 @@ async fn a_submitted_profile_is_kept_and_moves_to_the_next_step() {
 async fn an_incomplete_profile_comes_back_with_the_answers_intact() {
     let (app, state, _dir) = app_with(None).await;
     let (csrf_cookie, token) = csrf_pair(&app).await;
-    let session_id = state.sessions.create();
+    let session_id = signed_in_session(&state);
 
     let form = format!("first_name=Jane&last_name=&email=nonsense&csrf_token={token}");
 
@@ -783,7 +835,7 @@ async fn an_incomplete_profile_comes_back_with_the_answers_intact() {
 #[tokio::test]
 async fn the_email_step_does_not_send_the_password_back_to_the_browser() {
     let (app, state, _dir) = app_with(None).await;
-    let session_id = state.sessions.create();
+    let session_id = signed_in_session(&state);
     state.sessions.update(&session_id, |session| {
         session.email = configured().email;
     });
@@ -814,7 +866,7 @@ async fn the_email_step_does_not_send_the_password_back_to_the_browser() {
 #[tokio::test]
 async fn finishing_the_wizard_writes_the_config_and_forgets_the_session() {
     let (app, state, dir) = app_with(None).await;
-    let session_id = state.sessions.create();
+    let session_id = signed_in_session(&state);
     let ready = configured();
     state.sessions.update(&session_id, |session| {
         session.profile = ready.profile.clone();
@@ -853,7 +905,7 @@ async fn finishing_the_wizard_writes_the_config_and_forgets_the_session() {
 #[tokio::test]
 async fn the_wizard_refuses_to_finish_with_an_unusable_config() {
     let (app, state, dir) = app_with(None).await;
-    let session_id = state.sessions.create();
+    let session_id = signed_in_session(&state);
     state.sessions.update(&session_id, |session| {
         session.profile.first_name = "Jane".into();
         // No last name, no email, no transport.
@@ -889,7 +941,7 @@ async fn saving_inbox_settings_requires_an_address_and_a_password() {
             HttpRequest::builder()
                 .method("POST")
                 .uri("/settings/inbox")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(format!(
                     "inbox_email=&inbox_password=&csrf_token={token}"
@@ -918,7 +970,7 @@ async fn saving_inbox_settings_stores_them_and_fills_in_the_server() {
             HttpRequest::builder()
                 .method("POST")
                 .uri("/settings/inbox")
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(format!(
                     "inbox_email=jane%40gmail.com&inbox_password=secret&csrf_token={token}"
@@ -1076,7 +1128,7 @@ async fn post(app: &Router, path: &str) -> Response {
             HttpRequest::builder()
                 .method("POST")
                 .uri(path)
-                .header(header::COOKIE, cookie)
+                .header(header::COOKIE, with_session(&cookie))
                 .header(CSRF_HEADER, token)
                 .body(Body::empty())
                 .unwrap(),
@@ -1162,5 +1214,566 @@ async fn resuming_while_a_send_is_already_running_is_refused() {
     assert_eq!(
         post(&app, "/api/job/resume").await.status(),
         StatusCode::CONFLICT
+    );
+}
+
+// -------------------------------------------------------------------
+// Signing in
+// -------------------------------------------------------------------
+
+/// An instance with no session presented at all.
+async fn get_signed_out(app: &Router, path: &str) -> Response {
+    app.clone()
+        .oneshot(
+            HttpRequest::builder()
+                .uri(path)
+                .body(Body::empty())
+                .expect("a valid request"),
+        )
+        .await
+        .expect("the router should answer")
+}
+
+#[tokio::test]
+async fn a_page_asked_for_without_a_session_goes_to_the_login_form() {
+    let (app, _state, _dir) = app().await;
+
+    let response = get_signed_out(&app, "/").await;
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("/login")
+    );
+}
+
+/// A fetch cannot follow a redirect to an HTML page and do anything sensible
+/// with it, so the API says plainly that the request was not authorised.
+#[tokio::test]
+async fn an_api_call_without_a_session_is_unauthorized_rather_than_redirected() {
+    let (app, _state, _dir) = app().await;
+
+    let response = get_signed_out(&app, "/api/stats").await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn the_login_form_is_reachable_without_signing_in() {
+    let (app, _state, _dir) = app().await;
+
+    let response = get_signed_out(&app, "/login").await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_of(response).await;
+    assert!(body.contains("Sign in"));
+    // The navigation is for someone who is already in. The stylesheet still
+    // defines its look, so look for a link rather than the class name.
+    assert!(!body.contains("href=\"/brokers\""));
+    assert!(!body.contains("Sign out"));
+}
+
+/// A session cookie naming a session that never existed is not a way in.
+#[tokio::test]
+async fn an_invented_session_id_does_not_sign_anyone_in() {
+    let (app, _state, _dir) = app().await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/")
+                .header(
+                    header::COOKIE,
+                    format!("{}=deadbeefdeadbeefdeadbeefdeadbeef", session::COOKIE_NAME),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+}
+
+/// The setup wizard opens a session before anyone signs in. That session
+/// must not count as a sign-in.
+#[tokio::test]
+async fn a_session_with_nobody_signed_in_on_it_is_not_enough() {
+    let (app, state, _dir) = app().await;
+    let session_id = state.sessions.create();
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/")
+                .header(
+                    header::COOKIE,
+                    format!("{}={session_id}", session::COOKIE_NAME),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn the_right_password_signs_you_in_and_sets_a_session_cookie() {
+    let (app, state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+    let before = state.sessions.count();
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/login")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "username={TEST_USER}&password={TEST_PASSWORD}&csrf_token={token}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("/")
+    );
+
+    let issued = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.starts_with(session::COOKIE_NAME));
+    assert!(issued, "signing in should set a session cookie");
+    assert_eq!(state.sessions.count(), before + 1);
+}
+
+#[tokio::test]
+async fn the_wrong_password_comes_back_to_the_form_without_a_session() {
+    let (app, state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+    let before = state.sessions.count();
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/login")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "username={TEST_USER}&password=not-the-password&csrf_token={token}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(state.sessions.count(), before, "no session was opened");
+
+    let body = body_of(response).await;
+    assert!(body.contains("do not match an account"));
+    // The name is kept so it does not have to be typed again; the password
+    // never is.
+    assert!(body.contains(TEST_USER));
+    assert!(!body.contains("not-the-password"));
+}
+
+/// An unknown name and a wrong password must be indistinguishable, or the
+/// form becomes a way to find out who has an account here.
+#[tokio::test]
+async fn an_unknown_name_gives_the_same_answer_as_a_wrong_password() {
+    let (app, _state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+
+    let mut bodies = Vec::new();
+    for credentials in [
+        format!("username={TEST_USER}&password=wrong-one&csrf_token={token}"),
+        format!("username=nobody&password=wrong-one&csrf_token={token}"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/login")
+                    .header(header::COOKIE, cookie.clone())
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(credentials))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        bodies.push(body_of(response).await);
+    }
+
+    let wrong_password = bodies[0].replace(TEST_USER, "NAME");
+    let unknown_name = bodies[1].replace("nobody", "NAME");
+    assert_eq!(wrong_password, unknown_name);
+}
+
+#[tokio::test]
+async fn signing_out_drops_the_session() {
+    let (app, state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/logout")
+                .header(header::COOKIE, with_session(&cookie))
+                .header(CSRF_HEADER, token)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(
+        state.sessions.get(TEST_SESSION).is_none(),
+        "the session should be gone"
+    );
+
+    // And the page it was reaching is now out of reach.
+    let after = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/")
+                .header(header::COOKIE, session_cookie())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(after.status(), StatusCode::SEE_OTHER);
+}
+
+/// An account removed while its session was open stops working at once,
+/// rather than lasting until the session expires.
+#[tokio::test]
+async fn a_session_belonging_to_a_deleted_account_stops_working() {
+    let (app, state, _dir) = app().await;
+    state
+        .store
+        .create_user("second", "another-password")
+        .await
+        .expect("a second account");
+    assert!(
+        state
+            .store
+            .delete_user(crate::history::DEFAULT_USER_ID)
+            .await
+            .expect("the delete should run")
+    );
+
+    let response = get(&app, "/").await;
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn the_signed_in_name_is_shown_with_a_way_out() {
+    let (app, _state, _dir) = app().await;
+
+    let body = body_of(get(&app, "/").await).await;
+
+    assert!(body.contains(TEST_USER));
+    assert!(body.contains("Sign out"));
+    assert!(body.contains(r#"action="/logout""#));
+}
+
+// -------------------------------------------------------------------
+// Claiming a fresh instance
+// -------------------------------------------------------------------
+
+/// An instance nobody has claimed: no password anywhere, no session.
+async fn unclaimed_app() -> (Router, AppState, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let store = Store::open_in_memory().await.expect("an in-memory store");
+
+    let state = AppState {
+        config: Arc::new(RwLock::new(Some(configured()))),
+        config_path: dir.path().join("config.yaml"),
+        brokers: Arc::new(crate::broker::BrokerDatabase {
+            brokers: vec![broker("acme", "marketing", "us")],
+        }),
+        store,
+        engine: Arc::new(crate::template::Engine::new().expect("email templates")),
+        sessions: SessionStore::new(session::DEFAULT_TTL),
+        rate_limiter: RateLimiter::new(10_000, std::time::Duration::from_secs(60)),
+        jobs: JobManager::new(),
+        job_persistence: JobPersistence::new(dir.path()),
+        templates: Arc::new(templates::build().expect("page templates")),
+        port: PORT,
+    };
+
+    (router(state.clone()), state, dir)
+}
+
+#[tokio::test]
+async fn an_unclaimed_instance_sends_everything_to_the_first_run_page() {
+    let (app, _state, _dir) = unclaimed_app().await;
+
+    for path in ["/", "/settings", "/login"] {
+        let response = get_signed_out(&app, path).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::SEE_OTHER,
+            "{path} should redirect"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("/first-run"),
+            "{path} should go to the first-run page"
+        );
+    }
+}
+
+/// The single-user version left history behind. Whoever claims the instance
+/// inherits it, and the page says so rather than looking like a fresh start.
+#[tokio::test]
+async fn the_first_run_page_mentions_history_that_is_already_there() {
+    let (app, state, _dir) = unclaimed_app().await;
+    state
+        .store
+        .add_record(&NewRecord::sent(
+            "acme",
+            "Broker acme",
+            "privacy@acme.example",
+            "gdpr",
+            "<id@example.com>",
+        ))
+        .await
+        .expect("a stored request");
+
+    let body = body_of(get_signed_out(&app, "/first-run").await).await;
+
+    assert!(body.contains("1 removal request"));
+    assert!(body.contains("Nothing is discarded"));
+}
+
+#[tokio::test]
+async fn claiming_the_instance_takes_over_the_existing_rows() {
+    let (app, state, _dir) = unclaimed_app().await;
+    let (cookie, token) = csrf_pair_at(&app, "/first-run").await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/first-run")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "username=owner&password=a-good-password&confirm_password=a-good-password&csrf_token={token}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    // The row that was already there belongs to the account just created,
+    // rather than a second one appearing beside it.
+    let users = state.store.users().await.expect("the accounts");
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0].username, "owner");
+    assert_eq!(users[0].id, crate::history::DEFAULT_USER_ID);
+
+    // And they are signed in already, without having to type it again.
+    let issued = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.starts_with(session::COOKIE_NAME));
+    assert!(issued, "claiming should sign the new account in");
+}
+
+#[tokio::test]
+async fn two_different_passwords_do_not_claim_anything() {
+    let (app, state, _dir) = unclaimed_app().await;
+    let (cookie, token) = csrf_pair_at(&app, "/first-run").await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/first-run")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "username=owner&password=a-good-password&confirm_password=a-typo&csrf_token={token}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_of(response).await;
+    assert!(body.contains("not the same"));
+    assert!(!state.store.has_any_password().await.expect("the check"));
+}
+
+#[tokio::test]
+async fn a_short_password_is_refused_with_the_name_kept() {
+    let (app, state, _dir) = unclaimed_app().await;
+    let (cookie, token) = csrf_pair_at(&app, "/first-run").await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/first-run")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "username=owner&password=short&confirm_password=short&csrf_token={token}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let body = body_of(response).await;
+    assert!(body.contains("at least 8 characters"));
+    assert!(body.contains("owner"));
+    assert!(!state.store.has_any_password().await.expect("the check"));
+}
+
+/// Once someone has claimed it, the first-run page is not a second chance.
+#[tokio::test]
+async fn a_claimed_instance_sends_the_first_run_page_to_the_login_form() {
+    let (app, _state, _dir) = app().await;
+
+    let response = get_signed_out(&app, "/first-run").await;
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("/login")
+    );
+}
+
+/// Every form has to carry a token, or posting it is refused. The templates
+/// came from the Go version, where the field was written by gorilla; here it
+/// comes from `csrf_field`, and a template that forgets it fails silently.
+#[tokio::test]
+async fn every_form_carries_a_csrf_field() {
+    let (app, state, _dir) = app().await;
+    let session_id = signed_in_session(&state);
+
+    for path in [
+        "/settings",
+        "/setup/profile",
+        "/setup/email",
+        "/forms",
+        "/tasks",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(path)
+                    .header(
+                        header::COOKIE,
+                        format!("{}={session_id}", session::COOKIE_NAME),
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = body_of(response).await;
+        if !body.contains("<form") {
+            continue;
+        }
+        assert!(
+            body.contains(r#"name="csrf_token""#),
+            "{path} has a form with no CSRF field"
+        );
+    }
+}
+
+/// A form posted the plain way, with the token from the page rather than a
+/// header, has to be accepted — that is what a browser does when HTMX is not
+/// involved.
+#[tokio::test]
+async fn a_plain_form_post_with_the_rendered_token_is_accepted() {
+    let (app, _state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/settings")
+                .header(header::COOKIE, with_session(&cookie))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let page = body_of(response).await;
+    assert!(
+        page.contains(&format!(r#"name="csrf_token" value="{token}""#)),
+        "the page should render the token it was given"
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/settings/inbox")
+                .header(header::COOKIE, with_session(&cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "address=jane@example.com&password=secret&csrf_token={token}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_ne!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "the token from the page should satisfy the check"
     );
 }

@@ -14,11 +14,43 @@ use super::state::AppState;
 pub mod api;
 pub mod pages;
 pub mod setup;
+pub mod sign_in;
 
 /// Render a page template with the shared values every page needs.
 ///
 /// `context` is merged over the defaults, so a page can override `title`.
+///
+/// Signed-out pages — the login form and first run — go through
+/// [`render_signed_out`] instead, which leaves the navigation off.
 pub fn render(
+    state: &AppState,
+    user: &super::auth::CurrentUser,
+    csrf: Option<&CsrfToken>,
+    template: &str,
+    context: Value,
+) -> Result<Response, WebError> {
+    render_inner(
+        state,
+        csrf,
+        template,
+        minijinja::context! { ..context, ..minijinja::context! {
+            signed_in_as => user.username(),
+            show_nav => true,
+        } },
+    )
+}
+
+/// Render a page for someone who is not signed in.
+pub fn render_signed_out(
+    state: &AppState,
+    csrf: Option<&CsrfToken>,
+    template: &str,
+    context: Value,
+) -> Result<Response, WebError> {
+    render_inner(state, csrf, template, context)
+}
+
+fn render_inner(
     state: &AppState,
     csrf: Option<&CsrfToken>,
     template: &str,
@@ -29,13 +61,34 @@ pub fn render(
         .get_template(template)
         .map_err(|_| WebError::NotFound)?;
 
+    let token = csrf.map(CsrfToken::as_str).unwrap_or_default();
+
     let base = minijinja::context! {
-        csrf_token => csrf.map(CsrfToken::as_str).unwrap_or_default(),
+        csrf_token => token,
+        // The whole hidden input, so a form only has to name the field once,
+        // here, rather than getting it wrong in each template.
+        csrf_field => Value::from_safe_string(csrf_input(token)),
         configured => state.is_configured(),
+        version => env!("CARGO_PKG_VERSION"),
     };
 
     let html = template.render(minijinja::context! { ..context, ..base })?;
     Ok(Html(html).into_response())
+}
+
+/// The hidden field a plain form post needs to carry its CSRF token.
+///
+/// The token is hex, so it needs no escaping, but the field name has to
+/// match `security::CSRF_FIELD`, which is easier to guarantee here than in
+/// every template.
+fn csrf_input(token: &str) -> String {
+    if token.is_empty() {
+        return String::new();
+    }
+    format!(
+        r#"<input type="hidden" name="{}" value="{token}">"#,
+        crate::web::security::CSRF_FIELD
+    )
 }
 
 /// Pull the CSRF token the middleware minted for this request.

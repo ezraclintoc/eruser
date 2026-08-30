@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="min-h-[70vh] flex items-center justify-center py-8">
+    <div class="max-w-md w-full fade-in-up">
+        <div class="card p-8">
+            <div class="text-center mb-8">
+                <div class="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center" style="background: var(--accent-muted);">
+                    <svg class="w-7 h-7 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                    </svg>
+                </div>
+                <h1 class="font-display text-2xl font-bold text-primary mb-2">Claim this instance</h1>
+                <p class="text-secondary text-sm">
+                    Nobody has an account here yet. The first one you make is
+                    yours, and it is the one that can add the others.
+                </p>
+            </div>
+
+            {% if existing_requests > 0 %}
+            <div class="mb-6 p-3 rounded-xl text-sm" style="background: var(--accent-muted); color: var(--text-secondary); border: 1px solid var(--border);">
+                {{ existing_requests }} removal request{% if existing_requests != 1 %}s{% endif %}
+                already in this database will belong to the account you create
+                here. Nothing is discarded.
+            </div>
+            {% endif %}
+
+            {% if error %}
+            <div class="mb-6 p-3 rounded-xl text-sm" style="background: rgba(244, 63, 94, 0.1); color: var(--error); border: 1px solid rgba(244, 63, 94, 0.3);">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/first-run" class="space-y-5">
+                {{ csrf_field }}
+
+                <div>
+                    <label for="username" class="label">Name</label>
+                    <input type="text" name="username" id="username" required autofocus
+                        autocomplete="username"
+                        value="{{ username }}"
+                        class="input"
+                        placeholder="your name">
+                    <p class="mt-1 text-sm text-muted">Letters, numbers, dots, dashes and underscores.</p>
+                </div>
+
+                <div>
+                    <label for="password" class="label">Password</label>
+                    <input type="password" name="password" id="password" required
+                        autocomplete="new-password" minlength="8"
+                        class="input"
+                        placeholder="at least 8 characters">
+                </div>
+
+                <div>
+                    <label for="confirm_password" class="label">Password again</label>
+                    <input type="password" name="confirm_password" id="confirm_password" required
+                        autocomplete="new-password" minlength="8"
+                        class="input"
+                        placeholder="the same thing">
+                </div>
+
+                <button type="submit" class="btn btn-primary w-full">Create the account</button>
+            </form>
+        </div>
+
+        <p class="text-center text-sm text-muted mt-6">
+            Stored with Argon2id. There is no password recovery, because this
+            runs on your machine and there is nobody to recover it from.
+        </p>
+    </div>
+</div>
+{% endblock %}

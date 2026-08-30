@@ -33,8 +33,6 @@ pub struct AppState {
     pub job_persistence: JobPersistence,
     pub templates: Arc<minijinja::Environment<'static>>,
     pub port: u16,
-    /// The user rows belong to. One user until authentication lands.
-    pub user_id: i64,
 }
 
 impl std::fmt::Debug for AppState {

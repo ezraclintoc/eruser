@@ -11,6 +11,7 @@ use axum::Router;
 use axum::routing::{delete, get, post};
 
 pub mod assets;
+pub mod auth;
 pub mod error;
 pub mod handlers;
 pub mod job;
@@ -22,7 +23,7 @@ pub mod views;
 
 use crate::broker::BrokerDatabase;
 use crate::config::Config;
-use crate::history::{DEFAULT_USER_ID, Store};
+use crate::history::Store;
 use crate::template::Engine;
 
 use job::{JobManager, JobPersistence};
@@ -89,7 +90,6 @@ impl Server {
             job_persistence: JobPersistence::new(data_dir),
             templates: Arc::new(templates::build().map_err(Error::Templates)?),
             port,
-            user_id: DEFAULT_USER_ID,
         };
 
         Ok(Self {
@@ -158,6 +158,17 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/forms/{broker_id}/skip", post(handlers::pages::skip_form));
 
+    let sign_in = Router::new()
+        .route(
+            "/login",
+            get(handlers::sign_in::show_login).post(handlers::sign_in::sign_in),
+        )
+        .route("/logout", post(handlers::sign_in::sign_out))
+        .route(
+            "/first-run",
+            get(handlers::sign_in::show_first_run).post(handlers::sign_in::first_run),
+        );
+
     let setup = Router::new()
         .route("/", get(handlers::setup::index))
         .route("/welcome", get(handlers::setup::welcome))
@@ -193,12 +204,17 @@ pub fn router(state: AppState) -> Router {
         .route("/inbox/reclassify", post(handlers::api::inbox_reclassify));
 
     Router::new()
+        .merge(sign_in)
         .merge(pages)
         .nest("/setup", setup)
         .nest("/api", api)
         // Static files skip CSRF and rate limiting: they change no state, and
         // one page load asks for several of them at once.
         .route("/static/{*path}", get(assets::serve))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_sign_in,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             security::csrf_protect,

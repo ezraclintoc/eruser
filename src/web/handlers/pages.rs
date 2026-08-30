@@ -5,6 +5,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 
 use super::{csrf_of, is_htmx, read_form, render, require_setup};
 use crate::history::{FormStatus, ResponseFilter, ResponseType, TaskFilter, TaskStatus, TaskType};
+use crate::web::auth::CurrentUser;
 use crate::web::error::WebError;
 use crate::web::state::AppState;
 use crate::web::views::{
@@ -18,6 +19,7 @@ const HISTORY_PAGE_LIMIT: i64 = 1000;
 
 pub async fn dashboard(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     if let Some(redirect) = require_setup(&state) {
@@ -27,11 +29,11 @@ pub async fn dashboard(
     let config = state.config().unwrap_or_default();
     let stats = Stats::new(
         state.brokers.brokers.len(),
-        state.store.stats(state.user_id).await?,
+        state.store.stats(user.id()).await?,
     );
     let recent: Vec<HistoryRow> = state
         .store
-        .recent_requests(state.user_id, DASHBOARD_HISTORY)
+        .recent_requests(user.id(), DASHBOARD_HISTORY)
         .await?
         .into_iter()
         .map(HistoryRow::from)
@@ -39,6 +41,7 @@ pub async fn dashboard(
 
     render(
         &state,
+        &user,
         csrf_of(&request).as_ref(),
         "dashboard.html",
         minijinja::context! {
@@ -47,18 +50,19 @@ pub async fn dashboard(
             broker_count => state.brokers.brokers.len(),
             recent_history => recent,
             stats => stats,
-            pipeline_stats => pipeline_stats(&state).await?,
+            pipeline_stats => pipeline_stats(&state, user.id()).await?,
         },
     )
 }
 
 pub async fn brokers(
     State(state): State<AppState>,
+    user: CurrentUser,
     Query(filters): Query<BrokerFilters>,
     request: Request,
 ) -> Result<Response, WebError> {
     let filters = filters.normalized();
-    let rows = broker_rows(&state, &filters).await?;
+    let rows = broker_rows(&state, user.id(), &filters).await?;
 
     let context = minijinja::context! {
         title => "Data Brokers",
@@ -80,11 +84,12 @@ pub async fn brokers(
         "brokers.html"
     };
 
-    render(&state, csrf_of(&request).as_ref(), template, context)
+    render(&state, &user, csrf_of(&request).as_ref(), template, context)
 }
 
 pub async fn history(
     State(state): State<AppState>,
+    user: CurrentUser,
     Query(filters): Query<BrokerFilters>,
     request: Request,
 ) -> Result<Response, WebError> {
@@ -92,7 +97,7 @@ pub async fn history(
 
     let mut rows: Vec<HistoryRow> = state
         .store
-        .recent_requests(state.user_id, HISTORY_PAGE_LIMIT)
+        .recent_requests(user.id(), HISTORY_PAGE_LIMIT)
         .await?
         .into_iter()
         .map(HistoryRow::from)
@@ -114,15 +119,17 @@ pub async fn history(
         "history.html"
     };
 
-    render(&state, csrf_of(&request).as_ref(), template, context)
+    render(&state, &user, csrf_of(&request).as_ref(), template, context)
 }
 
 pub async fn settings(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     render(
         &state,
+        &user,
         csrf_of(&request).as_ref(),
         "settings.html",
         minijinja::context! {
@@ -135,6 +142,7 @@ pub async fn settings(
 /// Turn on inbox monitoring from the settings page.
 pub async fn save_inbox_settings(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -150,6 +158,7 @@ pub async fn save_inbox_settings(
 
     render(
         &state,
+        &user,
         csrf.as_ref(),
         "settings.html",
         minijinja::context! {
@@ -195,6 +204,7 @@ fn apply_inbox_settings(state: &AppState, form: &InboxForm) -> Result<(), &'stat
 
 pub async fn pipeline(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     if let Some(redirect) = require_setup(&state) {
@@ -204,7 +214,7 @@ pub async fn pipeline(
     let tasks = state
         .store
         .tasks(
-            state.user_id,
+            user.id(),
             TaskFilter {
                 status: Some(TaskStatus::Pending),
                 ..Default::default()
@@ -218,22 +228,27 @@ pub async fn pipeline(
 
     render(
         &state,
+        &user,
         csrf_of(&request).as_ref(),
         "pipeline.html",
         minijinja::context! {
             title => "Pipeline",
-            pipeline_stats => pipeline_stats(&state).await?,
+            pipeline_stats => pipeline_stats(&state, user.id()).await?,
             pending_tasks => tasks,
             inbox_configured => inbox_configured,
             recent_responses => state
                 .store
-                .broker_responses(state.user_id, ResponseFilter { limit: Some(20), ..Default::default() })
+                .broker_responses(user.id(), ResponseFilter { limit: Some(20), ..Default::default() })
                 .await?,
         },
     )
 }
 
-pub async fn tasks(State(state): State<AppState>, request: Request) -> Result<Response, WebError> {
+pub async fn tasks(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    request: Request,
+) -> Result<Response, WebError> {
     if let Some(redirect) = require_setup(&state) {
         return Ok(redirect);
     }
@@ -241,7 +256,7 @@ pub async fn tasks(State(state): State<AppState>, request: Request) -> Result<Re
     let open_tasks = state
         .store
         .tasks(
-            state.user_id,
+            user.id(),
             TaskFilter {
                 status: Some(TaskStatus::Pending),
                 ..Default::default()
@@ -251,18 +266,18 @@ pub async fn tasks(State(state): State<AppState>, request: Request) -> Result<Re
     let completed_tasks = state
         .store
         .tasks(
-            state.user_id,
+            user.id(),
             TaskFilter {
                 status: Some(TaskStatus::Completed),
                 ..Default::default()
             },
         )
         .await?;
-    let forms = state.store.forms_with_status(state.user_id).await?;
+    let forms = state.store.forms_with_status(user.id()).await?;
     let review_items = state
         .store
         .broker_responses(
-            state.user_id,
+            user.id(),
             ResponseFilter {
                 needs_review: true,
                 limit: Some(100),
@@ -294,6 +309,7 @@ pub async fn tasks(State(state): State<AppState>, request: Request) -> Result<Re
 
     render(
         &state,
+        &user,
         csrf_of(&request).as_ref(),
         "tasks.html",
         minijinja::context! {
@@ -314,39 +330,46 @@ pub async fn tasks(State(state): State<AppState>, request: Request) -> Result<Re
     )
 }
 
-pub async fn forms(State(state): State<AppState>, request: Request) -> Result<Response, WebError> {
+pub async fn forms(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    request: Request,
+) -> Result<Response, WebError> {
     if let Some(redirect) = require_setup(&state) {
         return Ok(redirect);
     }
 
-    let forms = state.store.forms_with_status(state.user_id).await?;
+    let forms = state.store.forms_with_status(user.id()).await?;
 
     render(
         &state,
+        &user,
         csrf_of(&request).as_ref(),
         "forms.html",
         minijinja::context! {
             title => "Forms",
             forms => &forms,
             total_forms => forms.len(),
-            stats => state.store.form_stats(state.user_id).await?,
+            stats => state.store.form_stats(user.id()).await?,
         },
     )
 }
 
 pub async fn task_detail(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(task_id): Path<i64>,
     request: Request,
 ) -> Result<Response, WebError> {
     let task = state
         .store
-        .task_by_id(state.user_id, task_id)
+        .task_by_id(user.id(), task_id)
         .await?
         .ok_or(WebError::NotFound)?;
 
     render(
         &state,
+        &user,
         csrf_of(&request).as_ref(),
         "task-detail.html",
         minijinja::context! {
@@ -359,23 +382,25 @@ pub async fn task_detail(
 /// The helper page: the broker's form, alongside the details to paste in.
 pub async fn task_helper(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(task_id): Path<i64>,
     request: Request,
 ) -> Result<Response, WebError> {
     let task = state
         .store
-        .task_by_id(state.user_id, task_id)
+        .task_by_id(user.id(), task_id)
         .await?
         .ok_or(WebError::NotFound)?;
 
     // Record that the user has seen it, so "opened but not finished" is
     // distinguishable from "never looked at".
-    state.store.mark_task_opened(state.user_id, task_id).await?;
+    state.store.mark_task_opened(user.id(), task_id).await?;
 
     let config = state.config().unwrap_or_default();
 
     render(
         &state,
+        &user,
         csrf_of(&request).as_ref(),
         "task-helper.html",
         minijinja::context! {
@@ -420,16 +445,18 @@ pub struct ProfileField {
 
 pub async fn complete_task(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(task_id): Path<i64>,
 ) -> Result<Response, WebError> {
-    finish_task(&state, task_id, TaskStatus::Completed).await
+    finish_task(&state, user.id(), task_id, TaskStatus::Completed).await
 }
 
 pub async fn skip_task(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(task_id): Path<i64>,
 ) -> Result<Response, WebError> {
-    finish_task(&state, task_id, TaskStatus::Skipped).await
+    finish_task(&state, user.id(), task_id, TaskStatus::Skipped).await
 }
 
 /// Mark a task done or skipped, 404ing if it does not exist.
@@ -438,14 +465,11 @@ pub async fn skip_task(
 /// task being completed that had already been deleted.
 async fn finish_task(
     state: &AppState,
+    user_id: i64,
     task_id: i64,
     status: TaskStatus,
 ) -> Result<Response, WebError> {
-    if !state
-        .store
-        .complete_task(state.user_id, task_id, status)
-        .await?
-    {
+    if !state.store.complete_task(user_id, task_id, status).await? {
         return Err(WebError::NotFound);
     }
     Ok(Redirect::to("/tasks").into_response())
@@ -454,10 +478,12 @@ async fn finish_task(
 /// Mark a broker's form dealt with, without there being a task row for it.
 pub async fn complete_form(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(broker_id): Path<String>,
 ) -> Result<Response, WebError> {
     advance_form(
         &state,
+        user.id(),
         &broker_id,
         crate::history::PipelineStatus::FormFilled,
     )
@@ -466,19 +492,27 @@ pub async fn complete_form(
 
 pub async fn skip_form(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(broker_id): Path<String>,
 ) -> Result<Response, WebError> {
-    advance_form(&state, &broker_id, crate::history::PipelineStatus::Rejected).await
+    advance_form(
+        &state,
+        user.id(),
+        &broker_id,
+        crate::history::PipelineStatus::Rejected,
+    )
+    .await
 }
 
 async fn advance_form(
     state: &AppState,
+    user_id: i64,
     broker_id: &str,
     status: crate::history::PipelineStatus,
 ) -> Result<Response, WebError> {
     if !state
         .store
-        .update_pipeline_status(state.user_id, broker_id, status)
+        .update_pipeline_status(user_id, broker_id, status)
         .await?
     {
         return Err(WebError::NotFound);
@@ -487,14 +521,14 @@ async fn advance_form(
 }
 
 /// Gather the pipeline counts every page that shows them needs.
-pub async fn pipeline_stats(state: &AppState) -> Result<PipelineStats, WebError> {
-    let stages = state.store.pipeline_stats(state.user_id).await?;
-    let tasks = state.store.task_stats(state.user_id).await?;
-    let forms = state.store.form_stats(state.user_id).await?;
+pub async fn pipeline_stats(state: &AppState, user_id: i64) -> Result<PipelineStats, WebError> {
+    let stages = state.store.pipeline_stats(user_id).await?;
+    let tasks = state.store.task_stats(user_id).await?;
+    let forms = state.store.form_stats(user_id).await?;
     let needs_review = state
         .store
         .broker_responses(
-            state.user_id,
+            user_id,
             ResponseFilter {
                 needs_review: true,
                 limit: Some(1000),
@@ -538,9 +572,10 @@ pub fn response_type_label(response_type: ResponseType) -> &'static str {
 /// Broker rows for the table, filtered and in database order.
 async fn broker_rows(
     state: &AppState,
+    user_id: i64,
     filters: &BrokerFilters,
 ) -> Result<Vec<BrokerWithStatus>, WebError> {
-    let statuses = state.store.all_broker_statuses(state.user_id).await?;
+    let statuses = state.store.all_broker_statuses(user_id).await?;
 
     Ok(state
         .brokers

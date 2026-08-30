@@ -24,7 +24,7 @@
             {% endif %}
             <form action="/tasks/{{ task.id }}/complete" method="POST">
                 {% if csrf_token %}
-                <input type="hidden" name="gorilla.csrf.Token" value="{{ csrf_token }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 {% endif %}
                 <button type="submit" class="btn btn-primary">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

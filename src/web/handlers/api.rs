@@ -10,6 +10,7 @@ use serde_json::json;
 use super::pages;
 use crate::history::{DEFAULT_USER_ID, ResponseFilter, Status, TaskFilter};
 use crate::send::{Outcome, Progress, SendJob, SendOptions, sender_for};
+use crate::web::auth::CurrentUser;
 use crate::web::error::WebError;
 use crate::web::job::{FailureKind, JobStatus, PendingJob};
 use crate::web::state::AppState;
@@ -21,19 +22,23 @@ use crate::web::views::{BrokerFilters, BrokerWithStatus, HistoryRow, Stats};
 /// 250 leaves headroom for whatever else the account sends.
 pub const DEFAULT_DAILY_LIMIT: usize = 250;
 
-pub async fn stats(State(state): State<AppState>) -> Result<Json<Stats>, WebError> {
+pub async fn stats(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Json<Stats>, WebError> {
     Ok(Json(Stats::new(
         state.brokers.brokers.len(),
-        state.store.stats(state.user_id).await?,
+        state.store.stats(user.id()).await?,
     )))
 }
 
 pub async fn brokers(
     State(state): State<AppState>,
+    user: CurrentUser,
     Query(filters): Query<BrokerFilters>,
 ) -> Result<Json<Vec<BrokerWithStatus>>, WebError> {
     let filters = filters.normalized();
-    let statuses = state.store.all_broker_statuses(state.user_id).await?;
+    let statuses = state.store.all_broker_statuses(user.id()).await?;
 
     Ok(Json(
         state
@@ -58,6 +63,7 @@ fn default_history_limit() -> i64 {
 
 pub async fn history(
     State(state): State<AppState>,
+    user: CurrentUser,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<HistoryRow>>, WebError> {
     // Clamped so a hand-edited URL cannot ask for the whole table.
@@ -66,7 +72,7 @@ pub async fn history(
     Ok(Json(
         state
             .store
-            .recent_requests(state.user_id, limit)
+            .recent_requests(user.id(), limit)
             .await?
             .into_iter()
             .map(HistoryRow::from)
@@ -75,10 +81,13 @@ pub async fn history(
 }
 
 /// Clear failed rows so a retry starts from a clean list.
-pub async fn delete_failed(State(state): State<AppState>) -> Result<Response, WebError> {
+pub async fn delete_failed(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Response, WebError> {
     let deleted = state
         .store
-        .delete_by_status(state.user_id, Status::Failed)
+        .delete_by_status(user.id(), Status::Failed)
         .await?;
 
     Ok(Json(json!({ "deleted": deleted })).into_response())
@@ -87,6 +96,7 @@ pub async fn delete_failed(State(state): State<AppState>) -> Result<Response, We
 /// Send to one broker, right now.
 pub async fn send_one(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(broker_id): Path<String>,
 ) -> Result<Response, WebError> {
     let config = state.config().ok_or(WebError::NotConfigured)?;
@@ -113,7 +123,7 @@ pub async fn send_one(
             // One broker, so nothing to pace against.
             rate_limit: Duration::ZERO,
             daily_limit: None,
-            user_id: state.user_id,
+            user_id: user.id(),
         },
     };
 
@@ -149,10 +159,11 @@ pub struct SendAllQuery {
 /// Start a background send to everything matching the current filters.
 pub async fn send_all(
     State(state): State<AppState>,
+    user: CurrentUser,
     Query(query): Query<SendAllQuery>,
 ) -> Result<Response, WebError> {
     let filters = query.filters.normalized();
-    let statuses = state.store.all_broker_statuses(state.user_id).await?;
+    let statuses = state.store.all_broker_statuses(user.id()).await?;
 
     let brokers: Vec<_> = state
         .brokers
@@ -170,12 +181,15 @@ pub async fn send_all(
         ));
     }
 
-    let job = start_send(&state, brokers, &filters, query.limit).await?;
+    let job = start_send(&state, user.id(), brokers, &filters, query.limit).await?;
     Ok(Json(job.snapshot()).into_response())
 }
 
 /// What is left of a run that stopped before it finished.
-pub async fn pending_job(State(state): State<AppState>) -> Response {
+pub async fn pending_job(
+    State(state): State<AppState>, // Taken for its effect: extracting it is what requires a sign-in.
+    _user: CurrentUser,
+) -> Response {
     match state.job_persistence.load() {
         Some(pending) if !pending.remaining_brokers.is_empty() => Json(json!({
             "pending": true,
@@ -195,7 +209,10 @@ pub async fn pending_job(State(state): State<AppState>) -> Response {
 /// Deliberately something you ask for. Upstream resumed automatically two
 /// seconds after the server started, which meant opening the interface could
 /// put hundreds of emails on the wire without anyone saying so.
-pub async fn resume_job(State(state): State<AppState>) -> Result<Response, WebError> {
+pub async fn resume_job(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Response, WebError> {
     let Some(pending) = state.job_persistence.load() else {
         return Err(WebError::BadRequest("There is nothing to resume.".into()));
     };
@@ -227,7 +244,7 @@ pub async fn resume_job(State(state): State<AppState>) -> Result<Response, WebEr
         status: pending.status_filter.clone(),
     };
 
-    let job = start_send(&state, brokers, &filters, pending.daily_limit).await?;
+    let job = start_send(&state, user.id(), brokers, &filters, pending.daily_limit).await?;
 
     // Carry the earlier totals across, so the progress bar continues rather
     // than restarting from zero.
@@ -242,6 +259,7 @@ pub async fn resume_job(State(state): State<AppState>) -> Result<Response, WebEr
 /// exactly like a fresh one from here on.
 async fn start_send(
     state: &AppState,
+    user_id: i64,
     brokers: Vec<crate::broker::Broker>,
     filters: &crate::web::views::BrokerFilters,
     limit: Option<usize>,
@@ -278,7 +296,7 @@ async fn start_send(
 
     // Every account this person may send through, so a run rolls over
     // rather than stopping at one mailbox's daily cap.
-    let capacity = state.store.account_capacity(state.user_id).await?;
+    let capacity = state.store.account_capacity(user_id).await?;
     let pool = if capacity.is_empty() {
         // Nothing configured as an account yet; fall back to whatever the
         // config file described.
@@ -303,7 +321,7 @@ async fn start_send(
         from: config.email.from.clone(),
         rate_limit: Duration::from_millis(config.options.rate_limit_ms),
         daily_limit: Some(daily_limit),
-        user_id: state.user_id,
+        user_id,
     };
 
     let background = state.clone();
@@ -431,7 +449,10 @@ fn looks_like_auth_failure(error: &str) -> bool {
     error.contains("authentication") || error.contains("password")
 }
 
-pub async fn active_job(State(state): State<AppState>) -> Response {
+pub async fn active_job(
+    State(state): State<AppState>, // Taken for its effect: extracting it is what requires a sign-in.
+    _user: CurrentUser,
+) -> Response {
     match state.jobs.active() {
         Some(job) => Json(json!({ "active": true, "job": job.snapshot() })).into_response(),
         None => Json(json!({ "active": false })).into_response(),
@@ -440,6 +461,8 @@ pub async fn active_job(State(state): State<AppState>) -> Response {
 
 pub async fn job_status(
     State(state): State<AppState>,
+    // Taken for its effect: extracting it is what requires a sign-in.
+    _user: CurrentUser,
     Path(job_id): Path<String>,
 ) -> Result<Response, WebError> {
     let job = state.jobs.get(&job_id).ok_or(WebError::NotFound)?;
@@ -448,6 +471,8 @@ pub async fn job_status(
 
 pub async fn cancel_job(
     State(state): State<AppState>,
+    // Taken for its effect: extracting it is what requires a sign-in.
+    _user: CurrentUser,
     Path(job_id): Path<String>,
 ) -> Result<Response, WebError> {
     let job = state.jobs.get(&job_id).ok_or(WebError::NotFound)?;
@@ -462,16 +487,22 @@ pub async fn cancel_job(
     Ok(Json(job.snapshot()).into_response())
 }
 
-pub async fn pipeline_stats(State(state): State<AppState>) -> Result<Response, WebError> {
-    Ok(Json(pages::pipeline_stats(&state).await?).into_response())
+pub async fn pipeline_stats(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Response, WebError> {
+    Ok(Json(pages::pipeline_stats(&state, user.id()).await?).into_response())
 }
 
-pub async fn responses(State(state): State<AppState>) -> Result<Response, WebError> {
+pub async fn responses(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Response, WebError> {
     Ok(Json(
         state
             .store
             .broker_responses(
-                state.user_id,
+                user.id(),
                 ResponseFilter {
                     limit: Some(200),
                     ..Default::default()
@@ -482,18 +513,15 @@ pub async fn responses(State(state): State<AppState>) -> Result<Response, WebErr
     .into_response())
 }
 
-pub async fn tasks(State(state): State<AppState>) -> Result<Response, WebError> {
-    Ok(Json(
-        state
-            .store
-            .tasks(state.user_id, TaskFilter::default())
-            .await?,
-    )
-    .into_response())
+pub async fn tasks(State(state): State<AppState>, user: CurrentUser) -> Result<Response, WebError> {
+    Ok(Json(state.store.tasks(user.id(), TaskFilter::default()).await?).into_response())
 }
 
 /// Read the mailbox and file whatever brokers have sent back.
-pub async fn inbox_scan(State(state): State<AppState>) -> Result<Response, WebError> {
+pub async fn inbox_scan(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Response, WebError> {
     let config = state.config().ok_or(WebError::NotConfigured)?;
     config
         .validate_inbox()
@@ -501,7 +529,7 @@ pub async fn inbox_scan(State(state): State<AppState>) -> Result<Response, WebEr
 
     let mut monitor = crate::inbox::Monitor::new(config.inbox.clone(), &state.brokers.brokers);
     let options = crate::inbox::ScanOptions {
-        user_id: state.user_id,
+        user_id: user.id(),
         ..Default::default()
     };
 
@@ -528,8 +556,11 @@ pub async fn inbox_scan(State(state): State<AppState>) -> Result<Response, WebEr
 /// Useful after the classifier changes: replies whose bodies were kept are
 /// re-read in full, and the rest fall back to their subject lines. No mail is
 /// fetched, so this works even after the mailbox has been cleared.
-pub async fn inbox_reclassify(State(state): State<AppState>) -> Result<Response, WebError> {
-    let changed = crate::inbox::scan::reclassify_stored(&state.store, state.user_id)
+pub async fn inbox_reclassify(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Response, WebError> {
+    let changed = crate::inbox::scan::reclassify_stored(&state.store, user.id())
         .await
         .map_err(WebError::Inbox)?;
 
@@ -537,9 +568,12 @@ pub async fn inbox_reclassify(State(state): State<AppState>) -> Result<Response,
 }
 
 /// Forget every stored reply, then read the mailbox again from scratch.
-pub async fn inbox_rescan(State(state): State<AppState>) -> Result<Response, WebError> {
-    let cleared = state.store.clear_broker_responses(state.user_id).await?;
-    let mut response = inbox_scan(State(state)).await?;
+pub async fn inbox_rescan(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> Result<Response, WebError> {
+    let cleared = state.store.clear_broker_responses(user.id()).await?;
+    let mut response = inbox_scan(State(state), user).await?;
 
     // Report what was discarded alongside what came back.
     response.headers_mut().insert(

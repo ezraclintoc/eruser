@@ -11,6 +11,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use super::{csrf_of, read_form, render};
 use crate::config::{Config, EmailConfig, Profile, SmtpConfig};
 use crate::email::{Message, new_sender};
+use crate::web::auth::CurrentUser;
 use crate::web::error::WebError;
 use crate::web::security::cookie_header;
 use crate::web::session::{COOKIE_NAME, Session};
@@ -22,6 +23,7 @@ const GMAIL_SMTP_PORT: u16 = 465;
 
 pub async fn welcome(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -29,6 +31,7 @@ pub async fn welcome(
 
     let mut response = render(
         &state,
+        &user,
         csrf.as_ref(),
         "setup/welcome.html",
         minijinja::context! { title => "Welcome", step => "welcome" },
@@ -39,6 +42,7 @@ pub async fn welcome(
 
 pub async fn show_profile(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -46,6 +50,7 @@ pub async fn show_profile(
 
     let mut response = render(
         &state,
+        &user,
         csrf.as_ref(),
         "setup/profile.html",
         minijinja::context! {
@@ -117,6 +122,7 @@ pub fn profile_errors(profile: &Profile) -> std::collections::BTreeMap<&'static 
 
 pub async fn save_profile(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -128,6 +134,7 @@ pub async fn save_profile(
         // Re-render with what was typed, so nothing has to be retyped.
         let mut response = render(
             &state,
+            &user,
             csrf.as_ref(),
             "setup/profile.html",
             minijinja::context! {
@@ -153,6 +160,7 @@ pub async fn save_profile(
 
 pub async fn show_email(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -160,6 +168,7 @@ pub async fn show_email(
 
     let mut response = render(
         &state,
+        &user,
         csrf.as_ref(),
         "setup/email.html",
         minijinja::context! {
@@ -255,6 +264,7 @@ pub fn email_errors(
 
 pub async fn save_email(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -266,6 +276,7 @@ pub async fn save_email(
     if !errors.is_empty() {
         let mut response = render(
             &state,
+            &user,
             csrf.as_ref(),
             "setup/email.html",
             minijinja::context! {
@@ -298,6 +309,7 @@ pub async fn save_email(
 
 pub async fn show_test(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -305,6 +317,7 @@ pub async fn show_test(
 
     let mut response = render(
         &state,
+        &user,
         csrf.as_ref(),
         "setup/test.html",
         minijinja::context! {
@@ -323,6 +336,7 @@ pub async fn show_test(
 /// Better to find out here than after 700 requests have silently failed.
 pub async fn send_test(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -349,6 +363,7 @@ pub async fn send_test(
 
     let mut response = render(
         &state,
+        &user,
         csrf.as_ref(),
         "setup/test.html",
         minijinja::context! {
@@ -388,6 +403,7 @@ async fn send_test_message(session: &Session, recipient: &str) -> Result<(), Str
 /// Write the collected answers to disk and finish.
 pub async fn complete(
     State(state): State<AppState>,
+    user: CurrentUser,
     request: Request,
 ) -> Result<Response, WebError> {
     let csrf = csrf_of(&request);
@@ -414,6 +430,7 @@ pub async fn complete(
 
     let mut response = render(
         &state,
+        &user,
         csrf.as_ref(),
         "setup/complete.html",
         minijinja::context! {

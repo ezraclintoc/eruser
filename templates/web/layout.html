@@ -410,6 +410,81 @@
             width: 100%;
         }
 
+        /* Account menu */
+        .account-menu {
+            position: relative;
+        }
+
+        .account-button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 40px;
+            padding: 0 12px;
+            border-radius: 10px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .account-button:hover {
+            background: var(--border);
+            color: var(--text-primary);
+        }
+
+        .account-initial {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .account-panel {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 8px);
+            min-width: 190px;
+            padding: 6px;
+            border-radius: 12px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-lg);
+            z-index: 60;
+        }
+
+        .account-item {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 14px;
+            text-align: left;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .account-item:hover {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+        }
+
+        .account-item-danger:hover {
+            color: var(--error);
+        }
+
         /* Theme toggle */
         .theme-toggle {
             width: 40px;
@@ -547,10 +622,12 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                             </svg>
                         </div>
-                        <span class="font-display text-xl font-bold text-primary">Eraser</span>
+                        <span class="font-display text-xl font-bold text-primary">eruser</span>
                     </a>
 
-                    <!-- Desktop Navigation -->
+                    <!-- Desktop navigation. Only someone signed in has
+                         anywhere to go. -->
+                    {% if show_nav %}
                     <div class="hidden sm:flex items-center gap-1 desktop-nav">
                         <a href="/" class="nav-link {% if title == "Dashboard" %}active{% endif %}">Dashboard</a>
                         <a href="/brokers" class="nav-link {% if title == "Data Brokers" %}active{% endif %}">Brokers</a>
@@ -558,6 +635,25 @@
                         <a href="/history" class="nav-link {% if title == "History" %}active{% endif %}">History</a>
                         <a href="/settings" class="nav-link {% if title == "Settings" %}active{% endif %}">Settings</a>
                     </div>
+                    {% endif %}
+
+                    <div class="flex items-center gap-2">
+                    {% if signed_in_as %}
+                    <!-- Who you are, and the way out. -->
+                    <div class="account-menu">
+                        <button type="button" class="account-button" onclick="document.getElementById('account-panel').classList.toggle('hidden')" aria-haspopup="true">
+                            <span class="account-initial">{{ signed_in_as[0]|upper }}</span>
+                            <span class="hidden sm:inline">{{ signed_in_as }}</span>
+                        </button>
+                        <div id="account-panel" class="account-panel hidden">
+                            <a href="/settings" class="account-item">Settings</a>
+                            <form method="POST" action="/logout">
+                                {{ csrf_field }}
+                                <button type="submit" class="account-item account-item-danger">Sign out</button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <!-- Theme Toggle -->
                     <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
@@ -567,14 +663,18 @@
                     </button>
 
                     <!-- Mobile Menu Button -->
+                    {% if show_nav %}
                     <button class="mobile-menu sm:hidden theme-toggle" onclick="document.getElementById('mobile-nav').classList.toggle('hidden')">
                         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                         </svg>
                     </button>
+                    {% endif %}
+                    </div>
                 </div>
 
                 <!-- Mobile Navigation -->
+                {% if show_nav %}
                 <div id="mobile-nav" class="hidden sm:hidden mt-4 pt-4 border-t border-[var(--border)]">
                     <div class="flex flex-col gap-2">
                         <a href="/" class="nav-link {% if title == "Dashboard" %}active{% endif %}">Dashboard</a>
@@ -584,6 +684,7 @@
                         <a href="/settings" class="nav-link {% if title == "Settings" %}active{% endif %}">Settings</a>
                     </div>
                 </div>
+                {% endif %}
             </div>
         </div>
     </nav>
@@ -601,11 +702,11 @@
                     <svg class="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                     </svg>
-                    <span class="text-sm text-muted">Eraser - Open Source Privacy Protection</span>
+                    <span class="text-sm text-muted">eruser — send data broker removal requests</span>
                 </div>
                 <div class="flex items-center gap-4 text-sm text-muted">
-                    <a href="https://github.com/eraser-privacy/eraser" target="_blank" class="hover:text-primary transition-colors">GitHub</a>
-                    <span>v1.0.0</span>
+                    <a href="https://github.com/ezraclintoc/eruser" target="_blank" rel="noreferrer" class="hover:text-primary transition-colors">GitHub</a>
+                    <span>v{{ version }}</span>
                 </div>
             </div>
         </div>
