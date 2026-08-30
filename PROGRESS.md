@@ -3,8 +3,12 @@
 Running log of the Go → Rust port. Ordered newest first. Every entry
 corresponds to a commit on `main`.
 
-**Status: the port is complete.** Every module in upstream eraser has a Rust
-counterpart. 520 tests passing across 19,752 lines.
+**Status: the port is complete, and the fork has started diverging.** Every
+module in upstream eraser has a Rust counterpart. 753 tests passing.
+
+Work since the port: several people on one instance, each with their own
+sign-in, settings and mailboxes, and several sending accounts per person so a
+run is not capped by one provider's daily limit.
 
 | Module | Upstream source | Go LOC | Rust tests |
 |---|---|---|---|
@@ -68,8 +72,13 @@ Each of these has a test pinning it, so it cannot come back.
   page load — so a privacy tool announced itself to three third parties each
   time it was opened, and rendered unstyled with no network.
 - **The schema is multi-user from the first migration.** Every table carries
-  `user_id` with a seeded `default` user. Nothing exposes it yet; retrofitting
-  ownership onto a populated database later is far worse.
+  `user_id` with a seeded `default` user. That seeded row is what an upgrade
+  claims on first run, so an existing history stays with the person who owns
+  it rather than being stranded beside a new account.
+- **Settings are in the database, not a file.** Go read one `config.yaml` for
+  the whole install; with several people, one profile and one mailbox for
+  everyone is not usable. An existing file is imported once and the database
+  is authoritative afterwards.
 - **Forms are not submitted by default.** `fill` types into the boxes, saves a
   full-page screenshot, and leaves the sending to a person. A form that
   submits the wrong thing cannot be un-submitted.
@@ -83,6 +92,46 @@ Each of these has a test pinning it, so it cannot come back.
 ---
 
 ## Changelog
+
+### `web` — a page for the people on this instance
+
+Lists everyone, adds someone, changes your own password. A household rather
+than an organisation: anyone can add a person, the account that claimed the
+instance can remove people, and there are no roles beyond that.
+
+### settings live in the database, one set per person
+
+`CurrentUser` carries them, read once per request by the middleware, so a
+page and the API it calls cannot disagree about what is configured. An
+existing `config.yaml` is imported the first time it is seen; after that
+editing the database is not undone by a stale file.
+
+### `web` — a page for the mailboxes requests are sent from
+
+What each account has left today, and how much can be sent across all of
+them. An account is personal unless it is marked as the family's, since
+sharing one lets someone else send mail as its owner. The provider table
+moved to `email::providers`, so the CLI, the wizard and the page agree on
+which SMTP server an address implies rather than each hardcoding Gmail.
+
+### `cli` — `eruser users` and `eruser accounts`
+
+`users` exists mostly so a forgotten password is recoverable: there is no
+reset by email, because the only mailbox eruser knows is the one it sends
+from. `accounts` registers the mailboxes to send through. Secrets are
+prompted for, never taken from a flag.
+
+### `web` — the interface is behind a sign-in
+
+`CurrentUser` is an extractor, so a handler that forgets to check who is
+asking does not compile. An instance nobody has claimed goes to `/first-run`,
+which takes over the seeded user row rather than creating a second account
+beside it — an upgrade keeps its history.
+
+### `send` — several sending accounts per run
+
+A pool takes an account's allowance before each send and rolls over when one
+is spent, so three mailboxes are three times the daily cap rather than one.
 
 ### `automation` — form filling
 

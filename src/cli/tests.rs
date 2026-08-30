@@ -119,7 +119,7 @@ fn serve_defaults_to_localhost_only() {
     assert_eq!(args.port, 8080);
     assert_eq!(
         args.host, "127.0.0.1",
-        "the web UI has no authentication yet, so it must not bind publicly by default"
+        "the web UI speaks plain HTTP, so it must not bind publicly by default"
     );
 }
 

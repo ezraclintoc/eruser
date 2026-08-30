@@ -18,7 +18,7 @@ There is an entire industry built on collecting your home address, your phone nu
 
 ## Status
 
-The port is complete — every part of the original has a Rust counterpart, covered by 520 tests. What it can do:
+The port is complete — every part of the original has a Rust counterpart, covered by 753 tests. What it can do:
 
 ```
 eruser init            set up your details and email
@@ -27,8 +27,22 @@ eruser monitor         read the replies and sort them
 eruser confirm         follow the confirmation links brokers sent
 eruser fill            fill in the opt-out forms they asked for
 eruser status          see how it all went
+eruser accounts        manage the mailboxes you send from
+eruser users           manage who can sign in to the web interface
 eruser serve           do all of it in a browser instead
 ```
+
+Past the port, the fork has started to diverge. The web interface asks for a
+password and holds more than one person, each with their own details, history
+and mailboxes; a household shares one instance without sharing an inbox. You
+can register several sending accounts, so a run is not capped by one
+provider's daily limit — it rolls over to the next mailbox when one is spent,
+and an account can be marked as the family's if everyone should be able to
+send through it.
+
+Upgrading from the Go version keeps everything: the existing database is
+adopted, `config.yaml` is imported once, and the first account you create
+claims the history that is already there.
 
 The initial Rust port was produced by AI; from here on out, development is done by humans. Treat that as an invitation — it needs real eyes on it, and bug reports and PRs are the fastest way to make it solid.
 
@@ -44,9 +58,8 @@ The usual arguments do apply — memory safety, a single static binary, errors y
 
 ## Roadmap
 
-Longer-term goals for the project:
+Longer-term goals for the project. Multi-user support is done — see Status.
 
-- **Multi-user support** — one instance handling more than one person's requests
 - **A cleaner UI** — the current interface is functional but visibly machine-generated; it deserves a real design pass
 - **Proxmox VE helper script** — install eruser as a container on Proxmox with one command
 - **Scheduled runs** — optional automatic re-send every six months, since brokers re-list you
