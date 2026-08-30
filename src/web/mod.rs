@@ -165,7 +165,13 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/accounts/{id}/delete",
             post(handlers::accounts::delete_account),
-        );
+        )
+        .route(
+            "/people",
+            get(handlers::people::people).post(handlers::people::add_person),
+        )
+        .route("/people/password", post(handlers::people::change_password))
+        .route("/people/{id}/delete", post(handlers::people::remove_person));
 
     let sign_in = Router::new()
         .route(

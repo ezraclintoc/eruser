@@ -1,0 +1,139 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="fade-in-up">
+    <div class="mb-8">
+        <h1 class="font-display text-3xl font-bold text-primary mb-2">People</h1>
+        <p class="text-secondary">
+            Everyone with an account on this instance. Each person has their
+            own details, their own history, and their own mailboxes — an
+            account here is not a way into anyone else's.
+        </p>
+    </div>
+
+    <div class="card overflow-hidden mb-8">
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Added</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in people %}
+                    <tr>
+                        <td>
+                            <span class="text-primary font-medium">{{ row.user.username }}</span>
+                            {% if row.you %}<span class="badge badge-success ml-2">you</span>{% endif %}
+                            {% if not row.user.has_password %}
+                            <span class="badge badge-warning ml-2">no password set</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.user.created_at | date if row.user.created_at else "—" }}</td>
+                        <td class="text-right">
+                            {% if row.removable %}
+                            <form method="POST" action="/people/{{ row.user.id }}/delete">
+                                {{ csrf_field }}
+                                <button type="submit" class="btn btn-danger">Remove</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="card p-8">
+            <h2 class="font-display text-xl font-bold text-primary mb-2">Add someone</h2>
+            <p class="text-secondary text-sm mb-6">
+                They will start with an empty profile and go through the setup
+                themselves. Tell them the password in person — nothing here
+                sends it to them.
+            </p>
+
+            {% if add_error %}
+            <div class="mb-6 p-3 rounded-xl text-sm" style="background: rgba(244, 63, 94, 0.1); color: var(--error); border: 1px solid rgba(244, 63, 94, 0.3);">
+                {{ add_error }}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/people" class="space-y-5">
+                {{ csrf_field }}
+
+                <div>
+                    <label for="username" class="label">Name</label>
+                    <input type="text" name="username" id="username" required
+                        class="input" placeholder="sam">
+                    <p class="mt-1 text-sm text-muted">Letters, numbers, dots, dashes and underscores.</p>
+                </div>
+
+                <div>
+                    <label for="password" class="label">Password</label>
+                    <input type="password" name="password" id="password" required
+                        autocomplete="new-password" minlength="{{ minimum_password_length }}"
+                        class="input" placeholder="at least {{ minimum_password_length }} characters">
+                </div>
+
+                <div>
+                    <label for="confirm_password" class="label">Password again</label>
+                    <input type="password" name="confirm_password" id="confirm_password" required
+                        autocomplete="new-password" minlength="{{ minimum_password_length }}"
+                        class="input" placeholder="the same thing">
+                </div>
+
+                <button type="submit" class="btn btn-primary">Add them</button>
+            </form>
+        </div>
+
+        <div class="card p-8">
+            <h2 class="font-display text-xl font-bold text-primary mb-2">Your password</h2>
+            <p class="text-secondary text-sm mb-6">
+                There is no reset by email. If you forget it, run
+                <code class="text-secondary">eruser users set-password {{ signed_in_as }}</code>
+                on the machine running this.
+            </p>
+
+            {% if password_error %}
+            <div class="mb-6 p-3 rounded-xl text-sm" style="background: rgba(244, 63, 94, 0.1); color: var(--error); border: 1px solid rgba(244, 63, 94, 0.3);">
+                {{ password_error }}
+            </div>
+            {% endif %}
+            {% if password_success %}
+            <div class="mb-6 p-3 rounded-xl text-sm" style="background: var(--accent-muted); color: var(--accent); border: 1px solid var(--border);">
+                {{ password_success }}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/people/password" class="space-y-5">
+                {{ csrf_field }}
+
+                <div>
+                    <label for="current_password" class="label">Current password</label>
+                    <input type="password" name="current_password" id="current_password" required
+                        autocomplete="current-password" class="input" placeholder="••••••••">
+                </div>
+
+                <div>
+                    <label for="new_password" class="label">New password</label>
+                    <input type="password" name="new_password" id="new_password" required
+                        autocomplete="new-password" minlength="{{ minimum_password_length }}"
+                        class="input" placeholder="at least {{ minimum_password_length }} characters">
+                </div>
+
+                <div>
+                    <label for="confirm_password_change" class="label">New password again</label>
+                    <input type="password" name="confirm_password" id="confirm_password_change" required
+                        autocomplete="new-password" minlength="{{ minimum_password_length }}"
+                        class="input" placeholder="the same thing">
+                </div>
+
+                <button type="submit" class="btn btn-secondary">Change it</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

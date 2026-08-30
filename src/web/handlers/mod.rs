@@ -14,6 +14,7 @@ use super::state::AppState;
 pub mod accounts;
 pub mod api;
 pub mod pages;
+pub mod people;
 pub mod setup;
 pub mod sign_in;
 

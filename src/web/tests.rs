@@ -2136,3 +2136,359 @@ async fn another_persons_personal_account_is_not_listed() {
     let body = body_of(get(&app, "/accounts").await).await;
     assert!(!body.contains("private@gmail.com"));
 }
+
+// -------------------------------------------------------------------
+// People
+// -------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_people_page_lists_everyone_and_marks_you() {
+    let (app, state, _dir) = app().await;
+    state
+        .store
+        .create_user("housemate", "another-password")
+        .await
+        .expect("a second account");
+
+    let body = body_of(get(&app, "/people").await).await;
+
+    assert!(body.contains(TEST_USER));
+    assert!(body.contains("housemate"));
+    assert!(body.contains(">you<"));
+}
+
+#[tokio::test]
+async fn someone_added_through_the_page_can_sign_in() {
+    let (app, state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/people",
+        &[
+            ("username", "housemate"),
+            ("password", "another-password"),
+            ("confirm_password", "another-password"),
+        ],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let signed_in = state
+        .store
+        .verify_password("housemate", "another-password")
+        .await
+        .expect("they should be able to sign in");
+    assert_eq!(signed_in.username, "housemate");
+}
+
+/// A new account starts empty: their own profile to fill in, and none of
+/// anyone else's history.
+#[tokio::test]
+async fn someone_added_starts_with_nothing_of_yours() {
+    let (app, state, _dir) = app().await;
+    post_form(
+        &app,
+        "/people",
+        &[
+            ("username", "housemate"),
+            ("password", "another-password"),
+            ("confirm_password", "another-password"),
+        ],
+    )
+    .await;
+
+    let them = state
+        .store
+        .user_by_name("housemate")
+        .await
+        .expect("the lookup")
+        .expect("the account");
+
+    let settings = state
+        .store
+        .config_for(them.id)
+        .await
+        .expect("their settings");
+    assert!(settings.profile.first_name.is_empty());
+    assert!(
+        state
+            .store
+            .sender_accounts(them.id)
+            .await
+            .expect("their accounts")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn two_different_passwords_do_not_create_an_account() {
+    let (app, state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/people",
+        &[
+            ("username", "housemate"),
+            ("password", "another-password"),
+            ("confirm_password", "a-typo"),
+        ],
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_of(response).await.contains("not the same"));
+    assert!(
+        state
+            .store
+            .user_by_name("housemate")
+            .await
+            .expect("the lookup")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn a_name_that_is_already_taken_is_refused() {
+    let (app, _state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/people",
+        &[
+            ("username", TEST_USER),
+            ("password", "another-password"),
+            ("confirm_password", "another-password"),
+        ],
+    )
+    .await;
+
+    assert!(body_of(response).await.contains("already taken"));
+}
+
+#[tokio::test]
+async fn the_owner_can_remove_someone() {
+    let (app, state, _dir) = app().await;
+    let them = state
+        .store
+        .create_user("housemate", "another-password")
+        .await
+        .expect("a second account");
+
+    let response = post(&app, &format!("/people/{}/delete", them.id)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    assert!(
+        state
+            .store
+            .user(them.id)
+            .await
+            .expect("the lookup")
+            .is_none()
+    );
+}
+
+/// Removing yourself out of the interface would leave nobody able to remove
+/// anyone, so the button is not offered and the route refuses.
+#[tokio::test]
+async fn the_owner_cannot_remove_themselves() {
+    let (app, state, _dir) = app().await;
+
+    let response = post(
+        &app,
+        &format!("/people/{}/delete", crate::history::DEFAULT_USER_ID),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    assert!(
+        state
+            .store
+            .user(crate::history::DEFAULT_USER_ID)
+            .await
+            .expect("the lookup")
+            .is_some()
+    );
+}
+
+/// Everyone can add someone, but only the account that claimed the instance
+/// can remove people.
+#[tokio::test]
+async fn someone_who_is_not_the_owner_cannot_remove_anyone() {
+    let (app, state, _dir) = app().await;
+    let them = state
+        .store
+        .create_user("housemate", "another-password")
+        .await
+        .expect("a second account");
+    let third = state
+        .store
+        .create_user("guest", "third-password")
+        .await
+        .expect("a third account");
+
+    // Sign in as the housemate instead of the owner.
+    let session = state.sessions.create();
+    state.sessions.update(&session, |s| {
+        s.user_id = Some(them.id);
+    });
+    let (cookie, token) = csrf_pair(&app).await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri(format!("/people/{}/delete", third.id))
+                .header(
+                    header::COOKIE,
+                    format!("{cookie}; {}={session}", session::COOKIE_NAME),
+                )
+                .header(CSRF_HEADER, token)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert!(
+        state
+            .store
+            .user(third.id)
+            .await
+            .expect("the lookup")
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn only_the_owner_is_offered_the_remove_button() {
+    let (app, state, _dir) = app().await;
+    let them = state
+        .store
+        .create_user("housemate", "another-password")
+        .await
+        .expect("a second account");
+
+    // As the owner, there is someone to remove.
+    assert!(body_of(get(&app, "/people").await).await.contains("Remove"));
+
+    // As the housemate, there is not.
+    let session = state.sessions.create();
+    state.sessions.update(&session, |s| {
+        s.user_id = Some(them.id);
+    });
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .uri("/people")
+                .header(
+                    header::COOKIE,
+                    format!("{}={session}", session::COOKIE_NAME),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert!(!body_of(response).await.contains("Remove"));
+}
+
+#[tokio::test]
+async fn you_can_change_your_own_password() {
+    let (app, state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/people/password",
+        &[
+            ("current_password", TEST_PASSWORD),
+            ("new_password", "a-brand-new-password"),
+            ("confirm_password", "a-brand-new-password"),
+        ],
+    )
+    .await;
+
+    assert!(body_of(response).await.contains("has been changed"));
+    assert!(
+        state
+            .store
+            .verify_password(TEST_USER, "a-brand-new-password")
+            .await
+            .is_ok()
+    );
+}
+
+#[tokio::test]
+async fn changing_your_password_needs_the_current_one() {
+    let (app, state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/people/password",
+        &[
+            ("current_password", "not-the-password"),
+            ("new_password", "a-brand-new-password"),
+            ("confirm_password", "a-brand-new-password"),
+        ],
+    )
+    .await;
+
+    assert!(body_of(response).await.contains("not the right password"));
+    assert!(
+        state
+            .store
+            .verify_password(TEST_USER, TEST_PASSWORD)
+            .await
+            .is_ok(),
+        "the old password should still work"
+    );
+}
+
+#[tokio::test]
+async fn a_mistyped_new_password_changes_nothing() {
+    let (app, state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/people/password",
+        &[
+            ("current_password", TEST_PASSWORD),
+            ("new_password", "a-brand-new-password"),
+            ("confirm_password", "a-brand-new-passwrod"),
+        ],
+    )
+    .await;
+
+    assert!(body_of(response).await.contains("not the same"));
+    assert!(
+        state
+            .store
+            .verify_password(TEST_USER, TEST_PASSWORD)
+            .await
+            .is_ok()
+    );
+}
+
+/// The page is a form for a password, so it must not ever echo one back.
+#[tokio::test]
+async fn no_password_is_ever_rendered_back() {
+    let (app, _state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/people/password",
+        &[
+            ("current_password", "wrong-but-memorable"),
+            ("new_password", "a-brand-new-password"),
+            ("confirm_password", "a-brand-new-password"),
+        ],
+    )
+    .await;
+
+    let body = body_of(response).await;
+    assert!(!body.contains("wrong-but-memorable"));
+    assert!(!body.contains("a-brand-new-password"));
+}
