@@ -11,6 +11,7 @@ use super::error::WebError;
 use super::security::CsrfToken;
 use super::state::AppState;
 
+pub mod accounts;
 pub mod api;
 pub mod pages;
 pub mod setup;

@@ -6,10 +6,12 @@ use crate::config::EmailConfig;
 
 mod api;
 mod error;
+pub mod providers;
 mod smtp;
 
 pub use api::{ApiSender, Provider};
 pub use error::{Error, ValidationError};
+pub use providers::{DEFAULT_SMTP_PORT, GMAIL_SMTP_HOST, needs_app_password, smtp_host_for};
 pub use smtp::SmtpSender;
 
 /// One removal request, addressed and rendered.

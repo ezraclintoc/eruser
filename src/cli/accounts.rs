@@ -6,6 +6,7 @@
 //! registered here and a run rolls over to the next when one is spent.
 
 use super::{Error, Paths, prompt};
+use crate::email::smtp_host_for;
 use crate::history::{
     AccountCapacity, AccountScope, DEFAULT_DAILY_LIMIT, DEFAULT_USER_ID, NewSenderAccount, Store,
     User,
@@ -242,23 +243,6 @@ fn build(
     }
 
     Ok(account)
-}
-
-/// The SMTP server for the well-known providers, so the common case needs no
-/// flag. Anything else has to say `--host`.
-fn smtp_host_for(address: &str) -> Option<&'static str> {
-    let domain = address.rsplit_once('@')?.1.to_lowercase();
-    match domain.as_str() {
-        "gmail.com" | "googlemail.com" => Some("smtp.gmail.com"),
-        "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => Some("smtp-mail.outlook.com"),
-        "yahoo.com" | "ymail.com" => Some("smtp.mail.yahoo.com"),
-        "icloud.com" | "me.com" | "mac.com" => Some("smtp.mail.me.com"),
-        "proton.me" | "protonmail.com" | "pm.me" => Some("smtp.protonmail.ch"),
-        "fastmail.com" | "fastmail.fm" => Some("smtp.fastmail.com"),
-        "zoho.com" => Some("smtp.zoho.com"),
-        "aol.com" => Some("smtp.aol.com"),
-        _ => None,
-    }
 }
 
 /// Render the account list. Pure, so the wording is testable.

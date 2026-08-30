@@ -1,0 +1,192 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="fade-in-up">
+    <div class="mb-8">
+        <h1 class="font-display text-3xl font-bold text-primary mb-2">Sending accounts</h1>
+        <p class="text-secondary">
+            Every mailbox requests can go out from. Providers cap how much one
+            address may send in a day, so a run moves on to the next account
+            when one is spent.
+        </p>
+    </div>
+
+    {% if error %}
+    <div class="mb-6 p-4 rounded-xl text-sm" style="background: rgba(244, 63, 94, 0.1); color: var(--error); border: 1px solid rgba(244, 63, 94, 0.3);">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    {% if has_accounts %}
+    <div class="card overflow-hidden mb-8">
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Account</th>
+                        <th>Sends as</th>
+                        <th>Who can use it</th>
+                        <th>Today</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in accounts %}
+                    <tr>
+                        <td>
+                            <div class="text-primary font-medium">{{ row.account.from_address }}</div>
+                            {% if row.account.label %}
+                            <div class="text-sm text-muted">{{ row.account.label }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge badge-neutral">{{ row.account.provider }}</span>
+                            {% if not row.account.enabled %}
+                            <span class="badge badge-warning">not in use</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.shared %}
+                            <span class="badge badge-success">everyone here</span>
+                            {% if not row.mine %}
+                            <div class="text-sm text-muted mt-1">{{ row.owner }}'s mailbox</div>
+                            {% endif %}
+                            {% else %}
+                            <span class="badge badge-neutral">only you</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="text-primary">{{ row.remaining }} left</div>
+                            <div class="text-sm text-muted">{{ row.sent_today }} of {{ row.account.daily_limit }} sent</div>
+                        </td>
+                        <td>
+                            {% if row.mine %}
+                            <div class="flex items-center gap-2 justify-end">
+                                {% if row.account.enabled %}
+                                <form method="POST" action="/accounts/{{ row.account.id }}/enabled/false">
+                                    {{ csrf_field }}
+                                    <button type="submit" class="btn btn-ghost">Stop using</button>
+                                </form>
+                                {% else %}
+                                <form method="POST" action="/accounts/{{ row.account.id }}/enabled/true">
+                                    {{ csrf_field }}
+                                    <button type="submit" class="btn btn-ghost">Use again</button>
+                                </form>
+                                {% endif %}
+                                <form method="POST" action="/accounts/{{ row.account.id }}/delete">
+                                    {{ csrf_field }}
+                                    <button type="submit" class="btn btn-danger">Remove</button>
+                                </form>
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <p class="text-secondary mb-8">
+        <span class="text-accent font-medium">{{ total_today }}</span>
+        requests can be sent today across these accounts.
+    </p>
+    {% else %}
+    <div class="card p-8 text-center mb-8">
+        <p class="text-secondary">
+            No sending accounts yet. Until one is added, requests go out
+            through whatever the setup wizard put in the config file.
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="card p-8">
+        <h2 class="font-display text-xl font-bold text-primary mb-6">Add an account</h2>
+
+        <form method="POST" action="/accounts" class="space-y-6">
+            {{ csrf_field }}
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="from_address" class="label">Address <span class="text-error">*</span></label>
+                    <input type="email" name="from_address" id="from_address" required
+                        class="input" placeholder="jane@gmail.com">
+                    <p class="mt-1 text-sm text-muted">Requests will be sent from here, and replies come back here.</p>
+                </div>
+                <div>
+                    <label for="label" class="label">Name it</label>
+                    <input type="text" name="label" id="label"
+                        class="input" placeholder="personal gmail">
+                    <p class="mt-1 text-sm text-muted">Only so you can tell them apart.</p>
+                </div>
+            </div>
+
+            <div>
+                <label for="provider" class="label">How it sends</label>
+                <select name="provider" id="provider" class="input">
+                    <option value="smtp">SMTP — a normal mailbox</option>
+                    <option value="resend">Resend — API key</option>
+                    <option value="sendgrid">SendGrid — API key</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="smtp_password" class="label">App password</label>
+                    <input type="password" name="smtp_password" id="smtp_password"
+                        class="input" placeholder="••••••••">
+                    <p class="mt-1 text-sm text-muted">
+                        Not your normal account password — Gmail, Yahoo and iCloud
+                        each issue a separate one for programs like this.
+                    </p>
+                </div>
+                <div>
+                    <label for="api_key" class="label">API key</label>
+                    <input type="password" name="api_key" id="api_key"
+                        class="input" placeholder="only for Resend or SendGrid">
+                </div>
+            </div>
+
+            <details class="text-secondary">
+                <summary class="cursor-pointer text-sm">Server settings, if your provider is not a common one</summary>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+                    <div class="sm:col-span-2">
+                        <label for="smtp_host" class="label">SMTP server</label>
+                        <input type="text" name="smtp_host" id="smtp_host"
+                            class="input" placeholder="filled in for you">
+                    </div>
+                    <div>
+                        <label for="smtp_port" class="label">Port</label>
+                        <input type="text" name="smtp_port" id="smtp_port"
+                            class="input" placeholder="465">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label for="smtp_username" class="label">Username</label>
+                        <input type="text" name="smtp_username" id="smtp_username"
+                            class="input" placeholder="the address, unless it differs">
+                    </div>
+                    <div>
+                        <label for="daily_limit" class="label">A day</label>
+                        <input type="text" name="daily_limit" id="daily_limit"
+                            class="input" placeholder="{{ default_daily_limit }}">
+                    </div>
+                </div>
+            </details>
+
+            <label class="flex items-start gap-3 p-4 rounded-xl cursor-pointer" style="background: var(--bg-elevated); border: 1px solid var(--border);">
+                <input type="checkbox" name="family" value="on" class="mt-1">
+                <span>
+                    <span class="text-primary font-medium">Anyone in the family can send through this</span>
+                    <span class="block text-sm text-muted mt-1">
+                        For a household sharing one mailbox. Everyone with an
+                        account here will be able to send removal requests from
+                        this address, and the replies land in this mailbox
+                        rather than theirs. Leave it off for your own address.
+                    </span>
+                </span>
+            </label>
+
+            <button type="submit" class="btn btn-primary">Add the account</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

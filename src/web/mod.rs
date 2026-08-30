@@ -156,7 +156,19 @@ pub fn router(state: AppState) -> Router {
             "/forms/{broker_id}/complete",
             post(handlers::pages::complete_form),
         )
-        .route("/forms/{broker_id}/skip", post(handlers::pages::skip_form));
+        .route("/forms/{broker_id}/skip", post(handlers::pages::skip_form))
+        .route(
+            "/accounts",
+            get(handlers::accounts::accounts).post(handlers::accounts::add_account),
+        )
+        .route(
+            "/accounts/{id}/enabled/{enabled}",
+            post(handlers::accounts::set_enabled),
+        )
+        .route(
+            "/accounts/{id}/delete",
+            post(handlers::accounts::delete_account),
+        );
 
     let sign_in = Router::new()
         .route(

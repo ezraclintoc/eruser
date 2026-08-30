@@ -1777,3 +1777,341 @@ async fn a_plain_form_post_with_the_rendered_token_is_accepted() {
         "the token from the page should satisfy the check"
     );
 }
+
+// -------------------------------------------------------------------
+// Sending accounts
+// -------------------------------------------------------------------
+
+/// Post a form the plain way, with the token in the body.
+async fn post_form(app: &Router, path: &str, fields: &[(&str, &str)]) -> Response {
+    let (cookie, token) = csrf_pair(app).await;
+
+    let mut pairs: Vec<(&str, &str)> = fields.to_vec();
+    pairs.push(("csrf_token", &token));
+    let body = serde_urlencoded::to_string(&pairs).expect("an encodable form");
+
+    app.clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri(path)
+                .header(header::COOKIE, with_session(&cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn the_accounts_page_explains_itself_when_there_are_none() {
+    let (app, _state, _dir) = app().await;
+
+    let body = body_of(get(&app, "/accounts").await).await;
+
+    assert!(body.contains("No sending accounts yet"));
+    assert!(body.contains("Add an account"));
+}
+
+#[tokio::test]
+async fn an_account_added_through_the_page_appears_on_it() {
+    let (app, state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/accounts",
+        &[
+            ("from_address", "jane@gmail.com"),
+            ("label", "personal gmail"),
+            ("provider", "smtp"),
+            ("smtp_password", "app-password"),
+        ],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let stored = state
+        .store
+        .sender_accounts(crate::history::DEFAULT_USER_ID)
+        .await
+        .expect("the accounts");
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].from_address, "jane@gmail.com");
+    assert_eq!(stored[0].smtp.host, "smtp.gmail.com");
+
+    let body = body_of(get(&app, "/accounts").await).await;
+    assert!(body.contains("jane@gmail.com"));
+    assert!(body.contains("personal gmail"));
+    assert!(body.contains("250 left"));
+}
+
+/// The password is stored, but it is never handed back to the browser.
+#[tokio::test]
+async fn the_page_does_not_show_the_password_back() {
+    let (app, _state, _dir) = app().await;
+    post_form(
+        &app,
+        "/accounts",
+        &[
+            ("from_address", "jane@gmail.com"),
+            ("smtp_password", "hunter2-app-password"),
+        ],
+    )
+    .await;
+
+    let body = body_of(get(&app, "/accounts").await).await;
+    assert!(!body.contains("hunter2-app-password"));
+}
+
+#[tokio::test]
+async fn an_account_is_personal_unless_the_box_was_ticked() {
+    let (app, state, _dir) = app().await;
+    post_form(
+        &app,
+        "/accounts",
+        &[
+            ("from_address", "jane@gmail.com"),
+            ("smtp_password", "app-password"),
+        ],
+    )
+    .await;
+
+    let stored = state
+        .store
+        .sender_accounts(crate::history::DEFAULT_USER_ID)
+        .await
+        .expect("the accounts");
+    assert_eq!(stored[0].scope, crate::history::AccountScope::Personal);
+
+    let body = body_of(get(&app, "/accounts").await).await;
+    assert!(body.contains("only you"));
+}
+
+#[tokio::test]
+async fn a_family_account_says_everyone_can_use_it() {
+    let (app, state, _dir) = app().await;
+    post_form(
+        &app,
+        "/accounts",
+        &[
+            ("from_address", "house@gmail.com"),
+            ("smtp_password", "app-password"),
+            ("family", "on"),
+        ],
+    )
+    .await;
+
+    let stored = state
+        .store
+        .sender_accounts(crate::history::DEFAULT_USER_ID)
+        .await
+        .expect("the accounts");
+    assert_eq!(stored[0].scope, crate::history::AccountScope::Family);
+
+    let body = body_of(get(&app, "/accounts").await).await;
+    assert!(body.contains("everyone here"));
+}
+
+/// The whole reason for several accounts: the allowances add up.
+#[tokio::test]
+async fn the_page_totals_what_can_be_sent_today() {
+    let (app, _state, _dir) = app().await;
+
+    for (address, limit) in [("one@gmail.com", "40"), ("two@gmail.com", "60")] {
+        post_form(
+            &app,
+            "/accounts",
+            &[
+                ("from_address", address),
+                ("smtp_password", "app-password"),
+                ("daily_limit", limit),
+            ],
+        )
+        .await;
+    }
+
+    let body = body_of(get(&app, "/accounts").await).await;
+    assert!(body.contains("100"));
+}
+
+#[tokio::test]
+async fn a_form_with_a_problem_comes_back_saying_what_it_is() {
+    let (app, state, _dir) = app().await;
+
+    let response = post_form(
+        &app,
+        "/accounts",
+        &[
+            ("from_address", "jane@example.com"),
+            ("smtp_password", "app-password"),
+        ],
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_of(response).await.contains("no SMTP server known"));
+    assert!(
+        state
+            .store
+            .sender_accounts(crate::history::DEFAULT_USER_ID)
+            .await
+            .expect("the accounts")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn an_account_can_be_stopped_and_started_again() {
+    let (app, state, _dir) = app().await;
+    post_form(
+        &app,
+        "/accounts",
+        &[
+            ("from_address", "jane@gmail.com"),
+            ("smtp_password", "app-password"),
+        ],
+    )
+    .await;
+
+    let id = state
+        .store
+        .sender_accounts(crate::history::DEFAULT_USER_ID)
+        .await
+        .expect("the accounts")[0]
+        .id;
+
+    let response = post(&app, &format!("/accounts/{id}/enabled/false")).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let body = body_of(get(&app, "/accounts").await).await;
+    assert!(body.contains("not in use"));
+
+    post(&app, &format!("/accounts/{id}/enabled/true")).await;
+    let body = body_of(get(&app, "/accounts").await).await;
+    assert!(!body.contains("not in use"));
+}
+
+#[tokio::test]
+async fn an_account_can_be_removed() {
+    let (app, state, _dir) = app().await;
+    post_form(
+        &app,
+        "/accounts",
+        &[
+            ("from_address", "jane@gmail.com"),
+            ("smtp_password", "app-password"),
+        ],
+    )
+    .await;
+
+    let id = state
+        .store
+        .sender_accounts(crate::history::DEFAULT_USER_ID)
+        .await
+        .expect("the accounts")[0]
+        .id;
+
+    let response = post(&app, &format!("/accounts/{id}/delete")).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    assert!(
+        state
+            .store
+            .sender_accounts(crate::history::DEFAULT_USER_ID)
+            .await
+            .expect("the accounts")
+            .is_empty()
+    );
+}
+
+/// Someone else's account is not theirs to remove, even if they can see it
+/// because it is shared with the household.
+#[tokio::test]
+async fn another_persons_account_cannot_be_removed() {
+    let (app, state, _dir) = app().await;
+    let other = state
+        .store
+        .create_user("housemate", "another-password")
+        .await
+        .expect("a second account");
+
+    let id = state
+        .store
+        .add_sender_account(&crate::history::NewSenderAccount {
+            user_id: other.id,
+            from_address: "housemate@gmail.com".into(),
+            scope: crate::history::AccountScope::Family,
+            ..Default::default()
+        })
+        .await
+        .expect("their account");
+
+    let response = post(&app, &format!("/accounts/{id}/delete")).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    assert!(
+        state
+            .store
+            .sender_account(other.id, id)
+            .await
+            .expect("the lookup")
+            .is_some(),
+        "it should still be there"
+    );
+}
+
+/// A shared account is usable by everyone, and the page says whose mailbox
+/// it actually is.
+#[tokio::test]
+async fn a_shared_account_shows_who_owns_it() {
+    let (app, state, _dir) = app().await;
+    let other = state
+        .store
+        .create_user("housemate", "another-password")
+        .await
+        .expect("a second account");
+
+    state
+        .store
+        .add_sender_account(&crate::history::NewSenderAccount {
+            user_id: other.id,
+            from_address: "housemate@gmail.com".into(),
+            scope: crate::history::AccountScope::Family,
+            ..Default::default()
+        })
+        .await
+        .expect("their account");
+
+    let body = body_of(get(&app, "/accounts").await).await;
+
+    assert!(body.contains("housemate@gmail.com"));
+    assert!(body.contains("housemate&#x27;s mailbox") || body.contains("housemate's mailbox"));
+    // Not theirs to stop or remove.
+    assert!(!body.contains("Stop using"));
+}
+
+/// A personal account belongs to one person and nobody else should see it.
+#[tokio::test]
+async fn another_persons_personal_account_is_not_listed() {
+    let (app, state, _dir) = app().await;
+    let other = state
+        .store
+        .create_user("housemate", "another-password")
+        .await
+        .expect("a second account");
+
+    state
+        .store
+        .add_sender_account(&crate::history::NewSenderAccount {
+            user_id: other.id,
+            from_address: "private@gmail.com".into(),
+            scope: crate::history::AccountScope::Personal,
+            ..Default::default()
+        })
+        .await
+        .expect("their account");
+
+    let body = body_of(get(&app, "/accounts").await).await;
+    assert!(!body.contains("private@gmail.com"));
+}
