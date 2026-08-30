@@ -14,10 +14,12 @@ use chrono::{Datelike, TimeZone, Utc};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
 use sqlx::{Row, SqlitePool};
 
+pub mod accounts;
 mod error;
 pub mod legacy;
 mod types;
 
+pub use accounts::{AccountCapacity, AccountScope, NewSenderAccount, SenderAccount};
 pub use error::Error;
 pub use types::*;
 
@@ -50,6 +52,27 @@ impl Store {
             .foreign_keys(true)
             .busy_timeout(std::time::Duration::from_secs(10));
 
+        // Bring the schema up to date over a single connection, then throw
+        // that connection away before opening the pool the app will use.
+        //
+        // sqlx caches prepared statements per connection, and the column
+        // list is baked into a cached statement. Migrating over a pool means
+        // some connections may hold statements prepared against the old
+        // shape, so whether a later query sees a newly added column depends
+        // on which connection happens to serve it. That failed roughly one
+        // run in three.
+        let setup = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options.clone())
+            .await
+            .map_err(|source| Error::Open {
+                path: path.to_path_buf(),
+                source,
+            })?;
+
+        Self::prepare_schema(&setup).await?;
+        setup.close().await;
+
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
@@ -59,7 +82,7 @@ impl Store {
                 source,
             })?;
 
-        Self::from_pool(pool).await
+        Ok(Self { pool })
     }
 
     /// An ephemeral database, for tests.
@@ -80,16 +103,24 @@ impl Store {
         Self::from_pool(pool).await
     }
 
+    /// An in-memory database lives inside its one connection, so the schema
+    /// has to be built on the same pool that will be used afterwards.
     async fn from_pool(pool: SqlitePool) -> Result<Self, Error> {
+        Self::prepare_schema(&pool).await?;
+        Ok(Self { pool })
+    }
+
+    /// Adopt a Go-era database if that is what this is, then migrate.
+    async fn prepare_schema(pool: &SqlitePool) -> Result<(), Error> {
         // A database written by the Go version has the tables but no
         // migration history, so sqlx would try to create them again and
         // fail. Bring it up to this schema first, keeping every row.
-        if legacy::is_legacy(&pool).await? {
-            legacy::adopt(&pool).await?;
+        if legacy::is_legacy(pool).await? {
+            legacy::adopt(pool).await?;
         }
 
-        MIGRATOR.run(&pool).await.map_err(Error::Migrate)?;
-        Ok(Self { pool })
+        MIGRATOR.run(pool).await.map_err(Error::Migrate)?;
+        Ok(())
     }
 
     /// The underlying pool, for callers that need their own queries.

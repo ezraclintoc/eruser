@@ -537,3 +537,48 @@ async fn rewriting_a_timestamp_twice_does_not_move_it() {
 
     assert_eq!(once, twice);
 }
+
+/// Adoption and migration change the shape of a table that queries have
+/// already been prepared against. sqlx caches those statements per
+/// connection, so doing this over a pool left some connections holding a
+/// stale column list — and whether a later read saw a newly added column
+/// depended on which connection served it. It failed about one run in three.
+#[tokio::test]
+async fn a_go_database_opens_the_same_way_every_time() {
+    for attempt in 0..25 {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.db");
+
+        {
+            let options = sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(&path)
+                .create_if_missing(true);
+            let pool = SqlitePool::connect_with(options).await.unwrap();
+            for statement in GO_SCHEMA.split(';').filter(|s| !s.trim().is_empty()) {
+                sqlx::query(sqlx::AssertSqlSafe(statement.to_string()))
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+            insert_go_request(&pool, "acme", "sent").await;
+            pool.close().await;
+        }
+
+        let store = Store::open(&path)
+            .await
+            .unwrap_or_else(|e| panic!("attempt {attempt} failed to open: {e}"));
+
+        assert_eq!(
+            store.stats(DEFAULT_USER_ID).await.unwrap().total,
+            1,
+            "attempt {attempt} lost the row"
+        );
+
+        // Reads that touch columns added by both adoption and the later
+        // migration, which is where the stale statements showed up.
+        store.recent_requests(DEFAULT_USER_ID, 10).await.unwrap();
+        store.account_capacity(DEFAULT_USER_ID).await.unwrap();
+
+        store.close().await;
+    }
+}
