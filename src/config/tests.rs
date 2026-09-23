@@ -46,6 +46,31 @@ fn apply_defaults_replaces_explicit_zero_and_empty_values() {
     assert_eq!(cfg.options.rate_limit_ms, DEFAULT_RATE_LIMIT_MS);
 }
 
+/// The solver is an opt-in extra: absent from the file means disabled, so
+/// every challenge goes to a person unless someone asks otherwise.
+#[test]
+fn the_captcha_solver_is_off_unless_asked_for() {
+    let cfg: Config = serde_norway::from_str("profile:\n  first_name: Jane\n").unwrap();
+    assert!(!cfg.pipeline.captcha_solver.enabled);
+    assert!(cfg.pipeline.captcha_solver.url.is_empty());
+}
+
+#[test]
+fn a_captcha_solver_section_parses_with_defaults() {
+    let cfg: Config = serde_norway::from_str(
+        "pipeline:\n  captcha_solver:\n    enabled: true\n    url: http://localhost:9100/solve\n",
+    )
+    .unwrap();
+
+    assert!(cfg.pipeline.captcha_solver.enabled);
+    assert_eq!(
+        cfg.pipeline.captcha_solver.url,
+        "http://localhost:9100/solve"
+    );
+    assert_eq!(cfg.pipeline.captcha_solver.timeout_sec, 30);
+    assert!(cfg.pipeline.captcha_solver.token.is_empty());
+}
+
 #[test]
 fn gmail_provider_implies_imap_server_and_port() {
     let mut cfg: Config =

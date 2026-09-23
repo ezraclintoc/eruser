@@ -71,6 +71,7 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
         headless: !args.show_browser,
         screenshot_dir: screenshot_dir(&args),
         submit: args.submit,
+        solver: browser::solver_from(&config),
         ..Default::default()
     };
 

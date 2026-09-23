@@ -4,7 +4,7 @@ Running log of the Go → Rust port. Ordered newest first. Every entry
 corresponds to a commit on `main`.
 
 **Status: the port is complete, and the fork has started diverging.** Every
-module in upstream eraser has a Rust counterpart. 778 tests passing.
+module in upstream eraser has a Rust counterpart. 797 tests passing.
 
 Work since the port: several people on one instance, each with their own
 sign-in, settings and mailboxes, and several sending accounts per person so a
@@ -92,6 +92,24 @@ Each of these has a test pinning it, so it cannot come back.
 ---
 
 ## Changelog
+
+### `automation` — an optional captcha solver, tried before a person
+
+Where the roadmap's "automatic CAPTCHA solving" lands, with the fork's rule
+kept intact: a solver is an optimisation, never a gate. When a challenge
+blocks a fill and a solver is configured, the solver gets a go — but its
+claim of success is not evidence. The page is re-read, and only a challenge
+that has genuinely gone lets the fill proceed. Every other path — solver
+unreachable, solver reports failure, solver claims victory over a widget
+still sitting on the page — lands in exactly the place the tool has always
+landed: the page untouched, a screenshot taken, a captcha task on the task
+list with a note saying what was attempted.
+
+No solving models ship with eruser. The solver is a sidecar the user runs —
+any service answering a three-field JSON contract — so the models and their
+licences stay out of this repository, and a privacy tool does not ship
+models nobody audited. Off by default; with the defaults nothing has
+changed.
 
 ### `web` — "Send to Unsent", and send-all reads the page's filters
 

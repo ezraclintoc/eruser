@@ -15,6 +15,7 @@ use futures::StreamExt;
 
 use super::captcha::{self, Captcha};
 use super::filler::{self, FillPlan, FormField};
+use super::solver::SolveOutcome;
 use crate::config::Profile;
 
 /// How long to wait for a page to load.
@@ -96,10 +97,13 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("could not re-read the page after a solver's attempt: {message}")]
+    ReadPage { message: String },
 }
 
 /// How the browser should behave.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BrowserOptions {
     /// Run without a visible window.
     pub headless: bool,
@@ -111,7 +115,28 @@ pub struct BrowserOptions {
     /// un-submitted, and a screenshot of a filled-but-unsent form is a much
     /// safer default for a tool acting on someone's behalf.
     pub submit: bool,
+    /// Try this before leaving a challenge for a person.
+    ///
+    /// `None` — the default — keeps the old behaviour: any blocking challenge
+    /// leaves the page untouched and lands a captcha task on the task list.
+    /// A solver is an optimisation, never a gate: whatever it fails to clear
+    /// lands in exactly the same place as if it had never been configured.
+    pub solver: Option<std::sync::Arc<dyn super::solver::CaptchaSolver>>,
     pub timeout: Duration,
+}
+
+// The solver handle does not implement Debug; everything worth debugging is
+// in the options' scalar fields.
+impl std::fmt::Debug for BrowserOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BrowserOptions")
+            .field("headless", &self.headless)
+            .field("screenshot_dir", &self.screenshot_dir)
+            .field("submit", &self.submit)
+            .field("timeout", &self.timeout)
+            .field("has_solver", &self.solver.is_some())
+            .finish()
+    }
 }
 
 impl Default for BrowserOptions {
@@ -120,6 +145,7 @@ impl Default for BrowserOptions {
             headless: true,
             screenshot_dir: None,
             submit: false,
+            solver: None,
             timeout: NAVIGATION_TIMEOUT,
         }
     }
@@ -136,6 +162,11 @@ pub struct FormOutcome {
     pub plan: FillPlan,
     /// A challenge standing in the way, if there is one.
     pub captcha: Option<Captcha>,
+    /// What a solver made of the challenge, when one was configured.
+    ///
+    /// Set even on success-with-verification-failure, so the task notes tell
+    /// the person what happened rather than leaving a bare "blocked".
+    pub solver_note: Option<String>,
     /// Whether the form was submitted.
     pub submitted: bool,
     /// Where the screenshot went.
@@ -157,7 +188,11 @@ impl FormOutcome {
         if let Some(captcha) = &self.captcha
             && captcha.blocks_automation()
         {
-            return format!("blocked by a challenge — {}", captcha.instructions());
+            let base = format!("blocked by a challenge — {}", captcha.instructions());
+            return match &self.solver_note {
+                Some(note) => format!("{base}. {note}."),
+                None => base,
+            };
         }
         if self.plan.is_empty() {
             return "nothing on the page could be filled in".to_string();
@@ -252,11 +287,51 @@ impl Browser {
 
         let plan = filler::plan(&self.profile, &fields);
 
-        // A challenge means anything typed in is likely to be thrown away, so
-        // leave the page as it is for a person to pick up.
-        let blocked = found_captcha
+        // A challenge means anything typed in is likely to be thrown away.
+        // With a solver configured, it gets a go first — but only a verified
+        // one counts: the page is re-read afterwards, and a challenge still
+        // standing leaves the page exactly as it would have been left for a
+        // person before solvers existed.
+        let mut blocked = found_captcha
             .as_ref()
             .is_some_and(Captcha::blocks_automation);
+
+        let mut solver_note = String::new();
+        if blocked
+            && let Some(solver) = &self.options.solver
+            && let Some(challenge) = &found_captcha
+        {
+            let outcome = solver.solve(challenge, url).await;
+            match &outcome {
+                SolveOutcome::Solved => {
+                    match super::solver::verify(&page, solver.as_ref(), challenge).await {
+                        Ok(genuinely_gone) => {
+                            if genuinely_gone.is_none() {
+                                blocked = false;
+                            } else {
+                                solver_note =
+                                    "the solver claimed success, but the challenge is still there"
+                                        .to_string();
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "could not re-read the page after a solver attempt");
+                            solver_note =
+                                "the solver claimed success, but the page could not be re-checked"
+                                    .to_string();
+                        }
+                    }
+                }
+                other => {
+                    tracing::info!(
+                        solver = solver.name(),
+                        detail = %other.detail(),
+                        "the solver did not clear the challenge; leaving it for a person"
+                    );
+                    solver_note = other.detail();
+                }
+            }
+        }
 
         if !blocked {
             for fill in &plan.fills {
@@ -284,6 +359,7 @@ impl Browser {
             title: page.get_title().await.ok().flatten().unwrap_or_default(),
             plan,
             captcha: found_captcha,
+            solver_note: (!solver_note.is_empty()).then_some(solver_note),
             submitted,
             screenshot,
         };
@@ -390,6 +466,16 @@ pub fn default_screenshot_dir() -> PathBuf {
         Some(home) => home.join(".eraser").join("screenshots"),
         None => PathBuf::from("screenshots"),
     }
+}
+
+/// The solver the pipeline settings describe, if any.
+///
+/// Lives here rather than in `solver` so callers building `BrowserOptions`
+/// have one obvious import.
+pub fn solver_from(
+    config: &crate::config::Config,
+) -> Option<std::sync::Arc<dyn super::solver::CaptchaSolver>> {
+    super::solver::from_config(&config.pipeline.captcha_solver)
 }
 
 fn screenshot_params() -> chromiumoxide::page::ScreenshotParams {

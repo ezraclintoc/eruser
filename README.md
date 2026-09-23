@@ -65,7 +65,7 @@ Longer-term goals for the project. Multi-user support is done — see Status.
 - **Proxmox VE helper script** — install eruser as a container on Proxmox with one command
 - **Scheduled runs** — optional automatic re-send every six months, since brokers re-list you
 - **AI response pipeline** — smarter automated handling of broker replies
-- **Automatic CAPTCHA solving** — for the opt-out forms that demand it
+- **Automatic CAPTCHA solving** — for the opt-out forms that demand it. A start has landed: an optional solver you run yourself gets a go before a challenge is left to you, but its success is only believed when the challenge has actually left the page — anything else queues the form for a human, as before
 - **Better guidance** — clearer instructions for the steps that still need a human
 
 ## Contributing

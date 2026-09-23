@@ -37,6 +37,7 @@ fn outcome(plan: FillPlan, captcha: Option<Captcha>, submitted: bool) -> FormOut
         title: "Opt out".into(),
         plan,
         captcha,
+        solver_note: None,
         submitted,
         screenshot: None,
     }
@@ -124,6 +125,45 @@ fn an_invisible_challenge_does_not_send_the_page_to_a_person() {
 
     assert!(!result.needs_a_person());
     assert!(!result.summary().contains("blocked"));
+}
+
+/// A solver that tried and failed is part of the story the person inherits:
+/// the notes say what was attempted, so nobody wonders whether a machine
+/// half-finished the job.
+#[test]
+fn a_failed_solver_attempt_is_recorded_in_the_summary() {
+    let mut result = outcome(filled_plan(), Some(challenge(CaptchaKind::HCaptcha)), false);
+    result.solver_note = Some("the solver could not clear the challenge".into());
+
+    assert!(result.needs_a_person());
+    assert!(result.summary().contains("blocked by a challenge"));
+    assert!(
+        result.summary().contains("could not clear"),
+        "{}",
+        result.summary()
+    );
+}
+
+/// A solver's claimed success that did not survive verification reads as a
+/// warning, not as done.
+#[test]
+fn a_solver_success_that_failed_verification_says_so() {
+    let mut result = outcome(filled_plan(), Some(challenge(CaptchaKind::HCaptcha)), false);
+    result.solver_note =
+        Some("the solver claimed success, but the challenge is still there".into());
+
+    assert!(result.needs_a_person());
+    assert!(result.summary().contains("claimed success"));
+}
+
+/// No solver configured, no note: the summary stays exactly as it was.
+#[test]
+fn without_a_solver_the_summary_is_unchanged() {
+    let result = outcome(filled_plan(), Some(challenge(CaptchaKind::HCaptcha)), false);
+
+    assert_eq!(result.solver_note, None);
+    assert!(result.summary().contains("blocked by a challenge"));
+    assert!(!result.summary().contains("solver"));
 }
 
 #[test]

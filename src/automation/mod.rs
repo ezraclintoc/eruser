@@ -8,8 +8,10 @@ pub mod browser;
 pub mod captcha;
 pub mod confirm;
 pub mod filler;
+pub mod solver;
 
 pub use browser::{Browser, BrowserOptions, FormOutcome};
 pub use captcha::{Captcha, CaptchaKind};
 pub use confirm::{Confirmation, Confirmer, Outcome};
 pub use filler::{FieldKind, FillPlan, FormField, plan};
+pub use solver::{CaptchaSolver, SolveOutcome};

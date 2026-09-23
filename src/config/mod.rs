@@ -199,6 +199,33 @@ pub struct Pipeline {
     pub browser_headless: bool,
     #[serde(default = "default_browser_timeout")]
     pub browser_timeout_sec: u64,
+    /// Optional captcha solver, tried before a challenge is left to a person.
+    #[serde(default)]
+    pub captcha_solver: CaptchaSolverConfig,
+}
+
+/// A captcha solver the user runs themselves, spoken to over HTTP.
+///
+/// Nothing here is enabled by default: with the defaults, every challenge is
+/// left for a person, which is always the fallback when a solver is switched
+/// on but cannot be reached. The solving models live in the sidecar, not in
+/// eruser.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaptchaSolverConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Where the sidecar answers, e.g. `http://localhost:9100/solve`.
+    #[serde(default)]
+    pub url: String,
+    /// Optional shared secret, sent as a bearer token.
+    #[serde(default)]
+    pub token: String,
+    #[serde(default = "default_solver_timeout")]
+    pub timeout_sec: u64,
+}
+
+fn default_solver_timeout() -> u64 {
+    30
 }
 
 fn default_true() -> bool {
@@ -216,6 +243,7 @@ impl Default for Pipeline {
             auto_fill_forms: false,
             browser_headless: true,
             browser_timeout_sec: DEFAULT_BROWSER_TIMEOUT_SECS,
+            captcha_solver: CaptchaSolverConfig::default(),
         }
     }
 }

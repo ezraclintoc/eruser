@@ -26,6 +26,7 @@ fn outcome(plan: FillPlan, captcha: Option<Captcha>, submitted: bool) -> FormOut
         title: "Opt out".into(),
         plan,
         captcha,
+        solver_note: None,
         submitted,
         screenshot: None,
     }

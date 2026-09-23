@@ -58,3 +58,24 @@ options:
   # excluded_brokers:
   #   - spokeo
   #   - whitepages
+
+pipeline:
+  # Automation the tool may do on its own. Both default to off.
+  # auto_confirm: false      # click confirmation links found in replies
+  # auto_fill_forms: false   # drive a browser through opt-out forms
+  # browser_headless: true
+  # browser_timeout_sec: 30
+
+  # Optional: a captcha solver you run yourself, tried before a challenge
+  # is left for you to do by hand. eruser ships no solving models — you
+  # point this at your own sidecar service, which answers
+  #   POST {"kind": "hcaptcha", "page_url": "https://..."}
+  #   -> 200 {"status": "solved"}   or {"status": "failed", "detail": "..."}
+  # A solver that is unreachable, or claims success without the challenge
+  # actually leaving the page, changes nothing: the form is left for you
+  # exactly as it would be with no solver at all.
+  captcha_solver:
+    enabled: false
+    # url: http://localhost:9100/solve
+    # token: shared-secret    # optional, sent as a bearer token
+    # timeout_sec: 30
