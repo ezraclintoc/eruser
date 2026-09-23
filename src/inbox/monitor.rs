@@ -224,6 +224,16 @@ impl Monitor {
         Ok(emails)
     }
 
+    /// Only the messages that look like a delivery failure.
+    pub async fn bounce_emails(&mut self, days: i64) -> Result<Vec<Email>, Error> {
+        Ok(self
+            .recent_emails(days)
+            .await?
+            .into_iter()
+            .filter(looks_like_a_bounce)
+            .collect())
+    }
+
     /// Only the messages that came from a known broker.
     pub async fn broker_emails(&mut self, days: i64) -> Result<Vec<Email>, Error> {
         Ok(self
@@ -233,6 +243,46 @@ impl Monitor {
             .filter(|email| !email.broker_id.is_empty())
             .collect())
     }
+}
+
+/// Whether a message is a delivery failure, judged from its envelope.
+///
+/// Deliberately not the classifier's bounce test, which weighs the body and
+/// counts `noreply@` as a hint. That is right when deciding what a broker's
+/// reply means, and wrong here: nearly every broker autoreply comes from a
+/// noreply address, and this decides whether an address gets deleted from
+/// the broker database.
+pub fn looks_like_a_bounce(email: &Email) -> bool {
+    /// Only addresses a mail system sends from. No `noreply`.
+    const SENDERS: &[&str] = &[
+        "mailer-daemon",
+        "postmaster",
+        "mail delivery",
+        "mail delivery system",
+        "mail delivery subsystem",
+        "mailerdaemon",
+        "mailsystem",
+    ];
+
+    const SUBJECTS: &[&str] = &[
+        "undeliverable",
+        "delivery failed",
+        "delivery status notification",
+        "returned mail",
+        "mail delivery failed",
+        "delivery failure",
+        "message not delivered",
+        "could not be delivered",
+    ];
+
+    let from = email.from.to_lowercase();
+    let from_name = email.from_name.to_lowercase();
+    let subject = email.subject.to_lowercase();
+
+    SENDERS
+        .iter()
+        .any(|sender| from.contains(sender) || from_name.contains(sender))
+        || SUBJECTS.iter().any(|pattern| subject.contains(pattern))
 }
 
 /// Build the sender-domain directory.

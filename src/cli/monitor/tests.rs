@@ -189,3 +189,34 @@ fn every_reply_type_has_a_label() {
         assert!(!label(response_type).is_empty(), "{response_type}");
     }
 }
+
+// -------------------------------------------------------------------
+// Watching
+// -------------------------------------------------------------------
+
+#[test]
+fn a_watch_says_how_often_it_will_look() {
+    let out = format_watch_start(5);
+    assert!(out.contains("every 5 minutes"));
+    assert!(out.contains("Ctrl-C"));
+}
+
+#[test]
+fn one_minute_is_worded_as_one_minute() {
+    assert!(format_watch_start(1).contains("every minute"));
+    assert!(!format_watch_start(1).contains("1 minutes"));
+}
+
+/// A zero interval would be a tight loop against someone's mail provider.
+#[test]
+fn an_interval_of_zero_is_treated_as_one_minute() {
+    assert!(format_watch_start(0).contains("every minute"));
+}
+
+#[test]
+fn the_default_interval_is_slow_enough_to_be_polite() {
+    assert!(
+        DEFAULT_WATCH_MINUTES >= 5,
+        "brokers answer over days; checking more often is only load"
+    );
+}

@@ -12,7 +12,7 @@ pub mod parser;
 pub mod scan;
 
 pub use classifier::{ClassifiedResponse, ResponseType, classify, classify_by_subject};
-pub use monitor::Monitor;
+pub use monitor::{Monitor, looks_like_a_bounce};
 pub use parser::ExtractedUrls;
 pub use scan::{ScanOptions, ScanSummary, scan};
 

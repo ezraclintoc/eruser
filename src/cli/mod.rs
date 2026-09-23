@@ -14,6 +14,7 @@ use crate::config::{self, Config};
 
 pub(crate) mod accounts;
 pub(crate) mod add_broker;
+pub(crate) mod cleanup_bounces;
 pub(crate) mod confirm;
 pub(crate) mod fill;
 pub(crate) mod init;
@@ -72,6 +73,9 @@ pub enum Command {
     /// Read the mailbox and sort what brokers sent back
     Monitor(monitor::Args),
 
+    /// Find broker addresses that no longer accept mail
+    CleanupBounces(cleanup_bounces::Args),
+
     /// Follow the confirmation links brokers sent
     Confirm(confirm::Args),
 
@@ -104,6 +108,7 @@ impl Cli {
             Command::Status(args) => status::run(&paths, args).await,
             Command::AddBroker => add_broker::run(&paths),
             Command::Monitor(args) => monitor::run(&paths, args).await,
+            Command::CleanupBounces(args) => cleanup_bounces::run(&paths, args).await,
             Command::Confirm(args) => confirm::run(&paths, args).await,
             Command::Fill(args) => fill::run(&paths, args).await,
             Command::Serve(args) => serve::run(&paths, args).await,
@@ -251,6 +256,11 @@ pub enum Error {
 
     #[error("cancelled")]
     Cancelled,
+
+    #[error(
+        "there is no broker file to change\n\nThis binary is using the broker database built into it. Pass --brokers with\na copy you can write to."
+    )]
+    NoBrokerFile,
 
     #[error("the two passwords are not the same")]
     PasswordsDiffer,

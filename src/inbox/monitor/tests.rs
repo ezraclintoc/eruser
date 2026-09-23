@@ -336,3 +336,96 @@ fn a_parsed_message_can_be_classified() {
         Some("https://acme.example/opt-out")
     );
 }
+
+// -------------------------------------------------------------------
+// Spotting a delivery failure
+// -------------------------------------------------------------------
+
+fn message(from: &str, from_name: &str, subject: &str) -> Email {
+    Email {
+        uid: 1,
+        message_id: "<m@example>".to_string(),
+        from: from.to_string(),
+        from_name: from_name.to_string(),
+        from_domain: from.rsplit('@').next().unwrap_or_default().to_string(),
+        subject: subject.to_string(),
+        body: String::new(),
+        html_body: String::new(),
+        received_at: None,
+        broker_id: String::new(),
+        broker_name: String::new(),
+    }
+}
+
+#[test]
+fn a_message_from_a_mail_system_is_a_bounce() {
+    assert!(looks_like_a_bounce(&message(
+        "MAILER-DAEMON@mail.example",
+        "",
+        "Returned to sender"
+    )));
+    assert!(looks_like_a_bounce(&message(
+        "postmaster@mail.example",
+        "",
+        "Anything"
+    )));
+}
+
+#[test]
+fn the_display_name_counts_too() {
+    assert!(looks_like_a_bounce(&message(
+        "noreply@mail.example",
+        "Mail Delivery Subsystem",
+        "Anything"
+    )));
+}
+
+#[test]
+fn a_bounce_subject_counts_on_its_own() {
+    for subject in [
+        "Undeliverable: Data deletion request",
+        "Delivery Status Notification (Failure)",
+        "Your message could not be delivered",
+        "Returned mail: see transcript for details",
+    ] {
+        assert!(
+            looks_like_a_bounce(&message("someone@mail.example", "", subject)),
+            "{subject:?} should read as a bounce"
+        );
+    }
+}
+
+/// The classifier counts `noreply@` as a hint that a message came from a
+/// machine, which is fair when reading a reply. Here it would condemn nearly
+/// every broker autoreply, and this decides what gets deleted.
+#[test]
+fn an_ordinary_noreply_is_not_a_bounce() {
+    assert!(!looks_like_a_bounce(&message(
+        "noreply@acme.example",
+        "Acme Privacy",
+        "We have received your request"
+    )));
+    assert!(!looks_like_a_bounce(&message(
+        "no-reply@acme.example",
+        "",
+        "Your data has been deleted"
+    )));
+}
+
+#[test]
+fn a_normal_broker_reply_is_not_a_bounce() {
+    assert!(!looks_like_a_bounce(&message(
+        "privacy@acme.example",
+        "Acme Privacy Team",
+        "Re: Data deletion request"
+    )));
+}
+
+#[test]
+fn the_test_is_not_case_sensitive() {
+    assert!(looks_like_a_bounce(&message(
+        "someone@mail.example",
+        "",
+        "UNDELIVERABLE"
+    )));
+}

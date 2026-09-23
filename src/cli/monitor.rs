@@ -20,7 +20,21 @@ pub struct Args {
     /// fetching new mail
     #[arg(long, conflicts_with_all = ["days", "include_unmatched"])]
     pub reclassify: bool,
+
+    /// Keep reading, rather than reading once and stopping
+    #[arg(long, conflicts_with = "reclassify")]
+    pub watch: bool,
+
+    /// Minutes between reads when watching
+    #[arg(long, default_value_t = DEFAULT_WATCH_MINUTES, requires = "watch")]
+    pub interval: u64,
 }
+
+/// How long to wait between reads when watching.
+///
+/// Brokers answer over days, not seconds, so there is nothing to gain from
+/// checking more often — and every check is a login the provider counts.
+pub const DEFAULT_WATCH_MINUTES: u64 = 5;
 
 impl Default for Args {
     fn default() -> Self {
@@ -28,6 +42,8 @@ impl Default for Args {
             days: scan::DEFAULT_DAYS,
             include_unmatched: false,
             reclassify: false,
+            watch: false,
+            interval: DEFAULT_WATCH_MINUTES,
         }
     }
 }
@@ -70,15 +86,81 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
     );
     println!();
 
-    let result = scan::scan(&mut monitor, &store, &options, |event| {
-        print!("{}", format_progress(&event));
-    })
-    .await;
+    let result = if args.watch {
+        watch(&mut monitor, &store, &options, args.interval).await
+    } else {
+        scan::scan(&mut monitor, &store, &options, |event| {
+            print!("{}", format_progress(&event));
+        })
+        .await
+        .map(|_| ())
+    };
 
     store.close().await;
     result?;
 
     Ok(())
+}
+
+/// Read the mailbox over and over until interrupted.
+///
+/// Go held an IMAP IDLE connection open and reacted to the server pushing an
+/// update. That is prompter, but servers drop an idle connection after about
+/// half an hour and upstream's loop did not reconnect, so watching quietly
+/// stopped working. Reading again on a timer is duller and keeps working:
+/// each pass connects, reads, and disconnects, so a dropped connection, a
+/// laptop waking from sleep, or a provider restarting costs one cycle
+/// instead of ending the watch.
+async fn watch(
+    monitor: &mut Monitor,
+    store: &Store,
+    options: &ScanOptions,
+    interval_minutes: u64,
+) -> Result<(), scan::Error> {
+    let interval = std::time::Duration::from_secs(interval_minutes.max(1) * 60);
+    println!("{}", format_watch_start(interval_minutes));
+
+    loop {
+        // A failed pass is reported and retried. The mailbox being briefly
+        // unreachable is not a reason to abandon a watch that is meant to
+        // run for days.
+        match scan::scan(monitor, store, options, |event| {
+            print!("{}", format_progress(&event));
+        })
+        .await
+        {
+            Ok(_) => {}
+            Err(problem) => {
+                // scan disconnects only on success. A pass that died part
+                // way through leaves whatever is left of the connection
+                // behind; drop it here so the retry starts clean rather
+                // than stacking a new session on top of a dead one.
+                monitor.disconnect().await;
+                eprintln!("Could not read the mailbox: {problem}");
+            }
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {}
+            _ = tokio::signal::ctrl_c() => {
+                println!();
+                println!("Stopped watching.");
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// What to say when a watch starts. Pure, so the wording is testable.
+fn format_watch_start(interval_minutes: u64) -> String {
+    let minutes = interval_minutes.max(1);
+    let every = if minutes == 1 {
+        "every minute".to_string()
+    } else {
+        format!("every {minutes} minutes")
+    };
+
+    format!("Watching {every}. Press Ctrl-C to stop.\n")
 }
 
 /// Render one step of a scan.

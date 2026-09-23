@@ -4,7 +4,7 @@ Running log of the Go → Rust port. Ordered newest first. Every entry
 corresponds to a commit on `main`.
 
 **Status: the port is complete, and the fork has started diverging.** Every
-module in upstream eraser has a Rust counterpart. 753 tests passing.
+module in upstream eraser has a Rust counterpart. 776 tests passing.
 
 Work since the port: several people on one instance, each with their own
 sign-in, settings and mailboxes, and several sending accounts per person so a
@@ -92,6 +92,34 @@ Each of these has a test pinning it, so it cannot come back.
 ---
 
 ## Changelog
+
+### `cli` — `eruser cleanup-bounces`
+
+Retire broker addresses that no longer accept mail. 764 community-maintained
+entries means some are always dead, and every send to one wastes a slot
+against the daily limit. Reads the mailbox for delivery failures, matches each
+bounced address back to its broker, and takes them out of `brokers.yaml` with
+`--remove` — a dry run until then. A bounce that names no address, or one
+nobody here uses, is reported rather than silently ignored.
+
+### `inbox` — spotting a delivery failure
+
+`looks_like_a_bounce` judges from the envelope alone: sender and subject, not
+the body. Deliberately not the classifier's bounce test — that one weighs the
+body and counts `noreply@` as a hint, which is right when reading a broker's
+reply and wrong here, because it would condemn nearly every broker autoreply
+and this decides what gets deleted.
+
+### `cli` — `eruser monitor --watch`
+
+Read the mailbox on a timer instead of once. Upstream's Go held an IMAP IDLE
+connection open and never reconnected, so its watch quietly stopped working
+once the server dropped the idle connection after about half an hour. Each
+pass here connects, reads, and disconnects, so a dropped connection, a laptop
+waking from sleep, or a provider restart costs one cycle instead of ending the
+watch. A failed pass is reported and retried; the interval defaults to five
+minutes, since brokers answer over days and every check is a login the
+provider counts.
 
 ### `web` — a page for the people on this instance
 

@@ -18,14 +18,15 @@ There is an entire industry built on collecting your home address, your phone nu
 
 ## Status
 
-The port is complete — every part of the original has a Rust counterpart, covered by 753 tests. What it can do:
+The port is complete — every part of the original has a Rust counterpart, covered by 776 tests. What it can do:
 
 ```
 eruser init            set up your details and email
 eruser send            send removal requests
-eruser monitor         read the replies and sort them
+eruser monitor         read the replies and sort them (--watch keeps reading)
 eruser confirm         follow the confirmation links brokers sent
 eruser fill            fill in the opt-out forms they asked for
+eruser cleanup-bounces retire broker addresses that no longer accept mail
 eruser status          see how it all went
 eruser accounts        manage the mailboxes you send from
 eruser users           manage who can sign in to the web interface
