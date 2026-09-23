@@ -4,7 +4,7 @@ Running log of the Go → Rust port. Ordered newest first. Every entry
 corresponds to a commit on `main`.
 
 **Status: the port is complete, and the fork has started diverging.** Every
-module in upstream eraser has a Rust counterpart. 797 tests passing.
+module in upstream eraser has a Rust counterpart. 842 tests passing.
 
 Work since the port: several people on one instance, each with their own
 sign-in, settings and mailboxes, and several sending accounts per person so a
@@ -92,6 +92,34 @@ Each of these has a test pinning it, so it cannot come back.
 ---
 
 ## Changelog
+
+### `reply` — an auto-replier, in drafts
+
+The roadmap's "AI response pipeline" as a first instalment: when the monitor
+files a reply that deserves an answer, a drafting model the user runs — any
+OpenAI-compatible endpoint, so Ollama, llama.cpp server, LM Studio, or vLLM —
+writes one, and the draft lands on the task list. A person reads every word
+and presses send; or, if the type is on the machine's `auto_send` whitelist,
+it can go out by itself. Identity-verification requests are hardcoded
+unsendable, checked at both the decision and the door.
+
+The rules the model works under are enforced in code, not hoped for in a
+prompt: every fact in a draft must come from the person's profile, the
+broker's email is framed as data rather than instructions, and a validator
+refuses any draft that promises documents, agrees to anything, invents an
+email address, or runs long. It is re-validated at send time, so a draft
+written under old rules cannot slip past new ones. A refused draft is no
+draft, and the log says why.
+
+A draft is keyed to the reply it answers, so re-running the monitor never
+duplicates it, and it rides the task list as a `draft_reply` task — the same
+queue a captcha uses. Off by default, like the solver; with the defaults,
+nothing changes.
+
+Also fixed here: pipeline settings (headless, timeout, solver, drafting) were
+only ever read from the database's copy of the config, which does not carry
+them — `fill` now reads that section from config.yaml, where it lives, and
+the web server reads it the same way.
 
 ### `automation` — an optional captcha solver, tried before a person
 

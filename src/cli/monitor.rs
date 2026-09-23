@@ -28,6 +28,11 @@ pub struct Args {
     /// Minutes between reads when watching
     #[arg(long, default_value_t = DEFAULT_WATCH_MINUTES, requires = "watch")]
     pub interval: u64,
+
+    /// After the scan, draft replies for the replies that deserve one.
+    /// Needs `ai:` to be set up; without it, this is a no-op.
+    #[arg(long)]
+    pub draft: bool,
 }
 
 /// How long to wait between reads when watching.
@@ -44,6 +49,7 @@ impl Default for Args {
             reclassify: false,
             watch: false,
             interval: DEFAULT_WATCH_MINUTES,
+            draft: false,
         }
     }
 }
@@ -98,6 +104,10 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
 
     store.close().await;
     result?;
+
+    if args.draft {
+        crate::cli::draft_replies::run_standalone(paths, true).await?;
+    }
 
     Ok(())
 }

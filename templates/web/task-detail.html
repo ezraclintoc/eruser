@@ -49,6 +49,7 @@
                             {% if task.task_type == "captcha" %}bg-yellow-100 text-yellow-600
                             {% elif task.task_type == "manual_form" %}bg-blue-100 text-blue-600
                             {% elif task.task_type == "review" %}bg-orange-100 text-orange-600
+                            {% elif task.task_type == "draft_reply" %}bg-purple-100 text-purple-600
                             {% elif task.task_type == "confirmation" %}bg-indigo-100 text-indigo-600
                             {% else %}bg-gray-100 text-gray-600{% endif %}">
                             {% if task.task_type == "captcha" %}
@@ -132,6 +133,43 @@
                 <div class="p-4 rounded-lg text-sm text-secondary" style="background: var(--bg-elevated);">
                     {{ task.notes }}
                 </div>
+            </div>
+            {% endif %}
+
+            <!-- Drafted reply -->
+            {% if draft %}
+            <div class="card p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="font-display text-lg font-semibold text-primary">Drafted reply</h2>
+                    <span class="text-xs text-muted">written by {{ draft.model }}</span>
+                </div>
+                <div class="p-4 rounded-lg mb-4" style="background: var(--bg-elevated);">
+                    <p class="text-sm font-medium text-primary mb-1">Subject</p>
+                    <p class="text-sm text-secondary">{{ draft.subject }}</p>
+                </div>
+                <div class="p-4 rounded-lg mb-4" style="background: var(--bg-elevated);">
+                    <p class="text-sm font-medium text-primary mb-1">Reply</p>
+                    <p class="text-sm text-secondary whitespace-pre-wrap">{{ draft.body }}</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <form action="/tasks/{{ task.id }}/draft/send" method="POST" class="flex-1">
+                        {% if csrf_token %}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary w-full">
+                            Send it
+                        </button>
+                    </form>
+                    <form action="/tasks/{{ task.id }}/draft/discard" method="POST">
+                        {% if csrf_token %}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        {% endif %}
+                        <button type="submit" class="btn btn-ghost text-sm py-2 px-3 text-red-600 hover:bg-red-50">
+                            Discard
+                        </button>
+                    </form>
+                </div>
+                <p class="text-xs text-muted mt-3">Read every word before sending. This reply goes out under your name, and the model wrote it — the safety checks refuse promises and agreements, but only you know whether it says what you mean.</p>
             </div>
             {% endif %}
 

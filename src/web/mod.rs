@@ -148,6 +148,14 @@ pub fn router(state: AppState) -> Router {
             post(handlers::pages::complete_task),
         )
         .route("/tasks/{task_id}/skip", post(handlers::pages::skip_task))
+        .route(
+            "/tasks/{task_id}/draft/send",
+            post(handlers::pages::send_draft),
+        )
+        .route(
+            "/tasks/{task_id}/draft/discard",
+            post(handlers::pages::discard_draft),
+        )
         .route("/forms", get(handlers::pages::forms))
         .route(
             "/forms/{broker_id}/complete",

@@ -27,4 +27,7 @@ pub enum Error {
 
     #[error("unknown {kind} value {value:?} in the database")]
     UnknownEnumValue { kind: &'static str, value: String },
+
+    #[error("that record does not exist")]
+    UnknownTask,
 }

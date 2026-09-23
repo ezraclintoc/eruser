@@ -16,6 +16,7 @@ pub(crate) mod accounts;
 pub(crate) mod add_broker;
 pub(crate) mod cleanup_bounces;
 pub(crate) mod confirm;
+pub(crate) mod draft_replies;
 pub(crate) mod fill;
 pub(crate) mod init;
 pub(crate) mod list_brokers;
@@ -76,6 +77,10 @@ pub enum Command {
     /// Find broker addresses that no longer accept mail
     CleanupBounces(cleanup_bounces::Args),
 
+    /// Draft replies to the brokers that asked for one
+    #[command(name = "draft-replies")]
+    DraftReplies(draft_replies::Args),
+
     /// Follow the confirmation links brokers sent
     Confirm(confirm::Args),
 
@@ -109,6 +114,7 @@ impl Cli {
             Command::AddBroker => add_broker::run(&paths),
             Command::Monitor(args) => monitor::run(&paths, args).await,
             Command::CleanupBounces(args) => cleanup_bounces::run(&paths, args).await,
+            Command::DraftReplies(args) => draft_replies::run(&paths, args).await,
             Command::Confirm(args) => confirm::run(&paths, args).await,
             Command::Fill(args) => fill::run(&paths, args).await,
             Command::Serve(args) => serve::run(&paths, args).await,
@@ -159,6 +165,21 @@ impl Paths {
             return Err(Error::NoConfig { path });
         }
         Ok(Config::load(path)?)
+    }
+
+    /// The machine-scoped settings: the pipeline section of config.yaml.
+    ///
+    /// These describe what this installation may do on its own — a headless
+    /// browser, a captcha solver, a drafting model — rather than what one
+    /// person has configured, so they stay in the file while profile, email
+    /// and inbox live in the database. A missing or broken file reads as the
+    /// defaults: everything off.
+    pub fn pipeline_settings(&self) -> crate::config::Pipeline {
+        let path = self.config_path();
+        let Ok((config, _)) = crate::config::Config::load_lenient(&path) else {
+            return crate::config::Pipeline::default();
+        };
+        config.pipeline
     }
 
     /// The settings a command should act on.
@@ -234,6 +255,9 @@ pub enum Error {
 
     #[error(transparent)]
     Inbox(#[from] crate::inbox::scan::Error),
+
+    #[error(transparent)]
+    Draft(#[from] crate::reply::Error),
 
     #[error(transparent)]
     Confirm(#[from] crate::automation::confirm::Error),

@@ -48,6 +48,9 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
     let config = paths
         .settings_for(&store, crate::history::DEFAULT_USER_ID)
         .await?;
+    // Browser and solver options are machine-scoped, so they come from the
+    // file. The database copy of the settings does not carry them.
+    let pipeline = paths.pipeline_settings();
 
     let forms = match &args.url {
         // A URL on the command line stands in for a broker's form.
@@ -68,11 +71,15 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
     }
 
     let options = BrowserOptions {
-        headless: !args.show_browser,
+        headless: if args.show_browser {
+            false
+        } else {
+            pipeline.browser_headless
+        },
         screenshot_dir: screenshot_dir(&args),
         submit: args.submit,
-        solver: browser::solver_from(&config),
-        ..Default::default()
+        solver: crate::automation::solver::from_config(&pipeline.captcha_solver),
+        timeout: std::time::Duration::from_secs(pipeline.browser_timeout_sec.max(1)),
     };
 
     if args.submit {

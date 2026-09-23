@@ -79,3 +79,22 @@ pipeline:
     # url: http://localhost:9100/solve
     # token: shared-secret    # optional, sent as a bearer token
     # timeout_sec: 30
+
+  # Optional: a drafting model you run yourself, writing replies to the
+  # brokers that ask for one. Speaks the OpenAI-compatible chat API, so
+  # Ollama, llama.cpp server, LM Studio, and vLLM all work as endpoints.
+  # Every draft lands on the task list for you to read and send — nothing
+  # is sent by itself unless its reply type is listed under auto_send.
+  # Identity-verification requests are never auto-sent, whatever the list
+  # says.
+  ai:
+    enabled: false
+    # endpoint: http://localhost:11434/v1   # Ollama
+    # model: qwen3:4b
+    # api_key: ""                           # only if your sidecar wants one
+    # timeout_sec: 60
+    # max_drafts_per_run: 50
+    # Reply types that may go out without a person pressing send.
+    # Options: confirm, missing_info. Empty (the default) means every
+    # draft waits for you.
+    # auto_send: []

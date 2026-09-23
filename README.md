@@ -26,6 +26,7 @@ eruser send            send removal requests
 eruser monitor         read the replies and sort them (--watch keeps reading)
 eruser confirm         follow the confirmation links brokers sent
 eruser fill            fill in the opt-out forms they asked for
+eruser draft-replies   write the replies brokers asked for (needs ai: setup)
 eruser cleanup-bounces retire broker addresses that no longer accept mail
 eruser status          see how it all went
 eruser accounts        manage the mailboxes you send from
@@ -64,7 +65,7 @@ Longer-term goals for the project. Multi-user support is done — see Status.
 - **A cleaner UI** — the current interface is functional but visibly machine-generated; it deserves a real design pass
 - **Proxmox VE helper script** — install eruser as a container on Proxmox with one command
 - **Scheduled runs** — optional automatic re-send every six months, since brokers re-list you
-- **AI response pipeline** — smarter automated handling of broker replies
+- **AI response pipeline** — smarter automated handling of broker replies. A start has landed: an optional local drafting model writes replies to the brokers that ask for one, every draft waits on the task list for you to read and send, and identity requests are never answered by a machine alone
 - **Automatic CAPTCHA solving** — for the opt-out forms that demand it. A start has landed: an optional solver you run yourself gets a go before a challenge is left to you, but its success is only believed when the challenge has actually left the page — anything else queues the form for a human, as before
 - **Better guidance** — clearer instructions for the steps that still need a human
 

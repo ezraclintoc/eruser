@@ -15,10 +15,13 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
 use sqlx::{Row, SqlitePool};
 
 pub mod accounts;
+pub mod drafts;
 mod error;
 pub mod legacy;
 mod types;
 pub mod users;
+
+pub use drafts::{NewReplyDraft, ReplyDraft};
 
 pub use accounts::{
     AccountCapacity, AccountScope, DEFAULT_DAILY_LIMIT, NewSenderAccount, SenderAccount,

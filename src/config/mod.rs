@@ -14,7 +14,7 @@ pub const DEFAULT_RATE_LIMIT_MS: u64 = 2000;
 pub const DEFAULT_TEMPLATE: &str = "generic";
 pub const DEFAULT_BROWSER_TIMEOUT_SECS: u64 = 30;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub profile: Profile,
@@ -187,7 +187,7 @@ impl Default for InboxConfig {
 }
 
 /// Settings for the automation pipeline.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pipeline {
     /// Auto-click confirmation links found in broker replies.
     #[serde(default)]
@@ -202,6 +202,9 @@ pub struct Pipeline {
     /// Optional captcha solver, tried before a challenge is left to a person.
     #[serde(default)]
     pub captcha_solver: CaptchaSolverConfig,
+    /// Optional drafting model, writing replies a person then sends.
+    #[serde(default)]
+    pub ai: AiConfig,
 }
 
 /// A captcha solver the user runs themselves, spoken to over HTTP.
@@ -244,8 +247,49 @@ impl Default for Pipeline {
             browser_headless: true,
             browser_timeout_sec: DEFAULT_BROWSER_TIMEOUT_SECS,
             captcha_solver: CaptchaSolverConfig::default(),
+            ai: AiConfig::default(),
         }
     }
+}
+
+/// A drafting model the user runs themselves, spoken to over the
+/// OpenAI-compatible chat API.
+///
+/// The same shape as the captcha solver: opt-in, sidecar, off by default,
+/// and every failure path lands the work back with a person. The endpoint
+/// is a base URL — Ollama serves `http://localhost:11434/v1`, llama.cpp
+/// server and LM Studio use their own local ports, all speaking the same
+/// `/chat/completions` contract.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AiConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub endpoint: String,
+    /// The model name the sidecar knows, e.g. `qwen3:4b`.
+    #[serde(default)]
+    pub model: String,
+    /// Optional, for sidecars that sit behind a token.
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_ai_timeout")]
+    pub timeout_sec: u64,
+    /// Reply types that may be sent without a person. Empty means every
+    /// draft waits. `id_verification` is refused in every case.
+    #[serde(default)]
+    pub auto_send: Vec<String>,
+    /// A cap per monitor run, so a first scan of a busy mailbox does not
+    /// hammer the sidecar with a hundred prompts.
+    #[serde(default = "default_max_drafts")]
+    pub max_drafts_per_run: u32,
+}
+
+fn default_ai_timeout() -> u64 {
+    60
+}
+
+fn default_max_drafts() -> u32 {
+    50
 }
 
 /// `~/.eraser/config.yaml`, or `config.yaml` in the working directory if the

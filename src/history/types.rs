@@ -94,6 +94,28 @@ string_enum! {
         ManualForm => "manual_form",
         Review => "review",
         Confirm => "confirm",
+        // A drafted reply waiting to be read and sent. The draft itself
+        // lives in `reply_drafts`; the task is how it reaches a person.
+        DraftReply => "draft_reply",
+    }
+}
+
+string_enum! {
+    /// Which kind of answer a drafted reply is.
+    ReplyType, MissingInfo {
+        MissingInfo => "missing_info",
+        Confirm => "confirm",
+        // Never auto-sends, whatever the whitelist says.
+        IdVerification => "id_verification",
+    }
+}
+
+string_enum! {
+    /// Lifecycle of a drafted reply.
+    DraftStatus, Draft {
+        Draft => "draft",
+        Sent => "sent",
+        Discarded => "discarded",
     }
 }
 

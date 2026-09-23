@@ -379,6 +379,16 @@ pub async fn task_detail(
         .await?
         .ok_or(WebError::NotFound)?;
 
+    // A draft task carries the draft id in its browser_state field; load it
+    // so the page can show the model's words and offer send / discard.
+    let draft = if task.task_type == TaskType::DraftReply
+        && let Ok(draft_id) = task.browser_state.parse::<i64>()
+    {
+        state.store.draft(user.id(), draft_id).await.ok()
+    } else {
+        None
+    };
+
     render(
         &state,
         &user,
@@ -387,8 +397,87 @@ pub async fn task_detail(
         minijinja::context! {
             title => format!("Task: {}", task.broker_name),
             task => task,
+            draft => draft,
         },
     )
+}
+
+/// Send a draft reply to its broker. The rails live in `reply::auto_send`:
+/// the whitelist is re-checked there, identity requests never pass, and the
+/// draft is re-validated against the current rules before anything goes on
+/// the wire. This handler is the manual path, but it goes through the same
+/// door — a person pressing send is not a reason to skip the checks.
+pub async fn send_draft(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(task_id): Path<i64>,
+) -> Result<Response, WebError> {
+    let task = state
+        .store
+        .task_by_id(user.id(), task_id)
+        .await?
+        .ok_or(WebError::NotFound)?;
+    let draft_id = task
+        .browser_state
+        .parse::<i64>()
+        .ok()
+        .ok_or(WebError::NotFound)?;
+    let draft = state
+        .store
+        .draft(user.id(), draft_id)
+        .await
+        .map_err(|_| WebError::NotFound)?;
+
+    let config = user.config().clone();
+    let whitelist = state.pipeline().ai.auto_send;
+
+    // The person's own address as the From, through the ordinary sender.
+    let sender = crate::email::new_sender(&config.email)?;
+    match crate::reply::auto_send::send_draft(
+        &state.store,
+        sender.as_ref(),
+        &config.email.from,
+        draft,
+        &whitelist,
+        &config.profile,
+    )
+    .await
+    {
+        Ok(_) => Ok(Redirect::to(&format!("/tasks/{task_id}")).into_response()),
+        Err(problem) => Err(WebError::BadRequest(problem.to_string())),
+    }
+}
+
+/// A person read the draft and did not want it.
+pub async fn discard_draft(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(task_id): Path<i64>,
+) -> Result<Response, WebError> {
+    let task = state
+        .store
+        .task_by_id(user.id(), task_id)
+        .await?
+        .ok_or(WebError::NotFound)?;
+    let draft_id = task
+        .browser_state
+        .parse::<i64>()
+        .ok()
+        .ok_or(WebError::NotFound)?;
+
+    state
+        .store
+        .discard_draft(user.id(), draft_id)
+        .await
+        .map_err(|_| WebError::NotFound)?;
+
+    // The task has nothing left to wait for.
+    state
+        .store
+        .complete_task(user.id(), task_id, TaskStatus::Completed)
+        .await?;
+
+    Ok(Redirect::to("/tasks").into_response())
 }
 
 /// The helper page: the broker's form, alongside the details to paste in.
@@ -566,6 +655,7 @@ pub fn task_type_label(task_type: TaskType) -> &'static str {
         TaskType::ManualForm => "Form",
         TaskType::Review => "Review",
         TaskType::Confirm => "Confirmation",
+        TaskType::DraftReply => "Draft reply",
     }
 }
 

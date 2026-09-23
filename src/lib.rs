@@ -9,6 +9,7 @@ pub mod config;
 pub mod email;
 pub mod history;
 pub mod inbox;
+pub mod reply;
 pub mod send;
 pub mod template;
 pub mod web;
