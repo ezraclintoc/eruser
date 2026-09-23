@@ -4,7 +4,7 @@ Running log of the Go → Rust port. Ordered newest first. Every entry
 corresponds to a commit on `main`.
 
 **Status: the port is complete, and the fork has started diverging.** Every
-module in upstream eraser has a Rust counterpart. 776 tests passing.
+module in upstream eraser has a Rust counterpart. 778 tests passing.
 
 Work since the port: several people on one instance, each with their own
 sign-in, settings and mailboxes, and several sending accounts per person so a
@@ -92,6 +92,15 @@ Each of these has a test pinning it, so it cannot come back.
 ---
 
 ## Changelog
+
+### `web` — "Send to Unsent", and send-all reads the page's filters
+
+A second button starts a run against only the brokers never contacted,
+whatever the page's status filter says. Fixing it turned up two old bugs in
+the send-all path: the endpoint read its filters from the query string while
+the page posted them in the body, so a run silently ignored every filter on
+the page; and the JavaScript polled `data.job_id` while the API returns `id`,
+so progress never appeared for a run started from the page. Both have tests.
 
 ### `cli` — `eruser cleanup-bounces`
 

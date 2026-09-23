@@ -213,10 +213,10 @@ fn an_interval_of_zero_is_treated_as_one_minute() {
     assert!(format_watch_start(0).contains("every minute"));
 }
 
+/// The default interval is slow enough to be polite.
 #[test]
 fn the_default_interval_is_slow_enough_to_be_polite() {
-    assert!(
-        DEFAULT_WATCH_MINUTES >= 5,
-        "brokers answer over days; checking more often is only load"
-    );
+    // Asserted through the formatter so the value is not constant-folded.
+    let out = format_watch_start(DEFAULT_WATCH_MINUTES);
+    assert!(out.contains("every 5 minutes"), "{out}");
 }

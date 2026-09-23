@@ -7,19 +7,34 @@
             <h1 class="font-display text-3xl font-bold text-primary">Data Brokers</h1>
             <p class="text-secondary mt-1">{{ total }} brokers in database</p>
         </div>
-        <button
-            id="send-all-btn"
-            class="btn btn-primary"
-            onclick="startSendAll()"
-        >
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-            </svg>
-            <span id="send-all-text">Send to All</span>
-            <span id="send-all-spinner" class="hidden">
-                <span class="spinner"></span>
-            </span>
-        </button>
+        <div class="flex gap-3">
+            <button
+                id="send-unsent-btn"
+                class="btn btn-secondary"
+                onclick="startSendAll(true)"
+            >
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+                <span id="send-unsent-text">Send to Unsent</span>
+                <span id="send-unsent-spinner" class="hidden">
+                    <span class="spinner"></span>
+                </span>
+            </button>
+            <button
+                id="send-all-btn"
+                class="btn btn-primary"
+                onclick="startSendAll(false)"
+            >
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+                <span id="send-all-text">Send to All</span>
+                <span id="send-all-spinner" class="hidden">
+                    <span class="spinner"></span>
+                </span>
+            </button>
+        </div>
     </div>
 
     <!-- Daily limit info banner -->
@@ -299,13 +314,15 @@ async function checkForActiveJob() {
     }
 }
 
-async function startSendAll() {
-    const btn = document.getElementById('send-all-btn');
-    const btnText = document.getElementById('send-all-text');
-    const spinner = document.getElementById('send-all-spinner');
+async function startSendAll(unsentOnly = false) {
+    const btn = document.getElementById(unsentOnly ? 'send-unsent-btn' : 'send-all-btn');
+    const btnText = document.getElementById(unsentOnly ? 'send-unsent-text' : 'send-all-text');
+    const spinner = document.getElementById(unsentOnly ? 'send-unsent-spinner' : 'send-all-spinner');
+    const otherBtn = document.getElementById(unsentOnly ? 'send-all-btn' : 'send-unsent-btn');
 
     // Disable button and show spinner
     btn.disabled = true;
+    if (otherBtn) otherBtn.disabled = true;
     btnText.textContent = 'Starting...';
     spinner.classList.remove('hidden');
 
@@ -313,6 +330,9 @@ async function startSendAll() {
     const search = document.getElementById('broker-search').value;
     const category = document.querySelector('[name="category"]').value;
     const region = document.querySelector('[name="region"]').value;
+    // "Send to Unsent" targets only brokers never contacted, whatever the
+    // visible status filter says; "Send to All" keeps the page's filter.
+    const status = unsentOnly ? 'pending' : document.querySelector('[name="status"]').value;
 
     // Get CSRF token
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -324,7 +344,7 @@ async function startSendAll() {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'X-CSRF-Token': csrfToken
             },
-            body: new URLSearchParams({ search, category, region })
+            body: new URLSearchParams({ search, category, region, status })
         });
 
         const data = await resp.json();
@@ -335,7 +355,7 @@ async function startSendAll() {
             return;
         }
 
-        currentJobId = data.job_id;
+        currentJobId = data.id;
         showProgressUI();
         startPolling();
 
@@ -511,10 +531,18 @@ function resetButton() {
     const btn = document.getElementById('send-all-btn');
     const btnText = document.getElementById('send-all-text');
     const spinner = document.getElementById('send-all-spinner');
+    const unsentBtn = document.getElementById('send-unsent-btn');
+    const unsentText = document.getElementById('send-unsent-text');
+    const unsentSpinner = document.getElementById('send-unsent-spinner');
 
     btn.disabled = false;
     btnText.textContent = 'Send to All';
     spinner.classList.add('hidden');
+    if (unsentBtn) {
+        unsentBtn.disabled = false;
+        unsentText.textContent = 'Send to Unsent';
+        unsentSpinner.classList.add('hidden');
+    }
     currentJobId = null;
 }
 </script>

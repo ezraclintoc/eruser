@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use axum::Form;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
@@ -157,10 +158,14 @@ pub struct SendAllQuery {
 }
 
 /// Start a background send to everything matching the current filters.
+///
+/// The filters come from the form body, which is what the page posts. They
+/// used to be read from the query string instead, so whatever the visitor
+/// had filtered on the page was silently ignored by this endpoint.
 pub async fn send_all(
     State(state): State<AppState>,
     user: CurrentUser,
-    Query(query): Query<SendAllQuery>,
+    Form(query): Form<SendAllQuery>,
 ) -> Result<Response, WebError> {
     let filters = query.filters.normalized();
     let statuses = state.store.all_broker_statuses(user.id()).await?;

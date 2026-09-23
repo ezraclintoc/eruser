@@ -659,6 +659,94 @@ async fn stored_replies_can_be_reclassified_without_a_mailbox() {
     assert_eq!(stored.response_type, crate::history::ResponseType::Pending);
 }
 
+/// The page posts its filters in the form body, so a run started with the
+/// status filter on "Pending" should not re-email brokers already sent to.
+/// This used to read the query string instead and silently ignore the page.
+#[tokio::test]
+async fn send_all_reads_the_filters_from_the_body() {
+    let (app, state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+
+    // One of the two brokers has been contacted.
+    state
+        .store
+        .add_record(&NewRecord::sent(
+            "acme",
+            "Broker acme",
+            "a@b.example",
+            "gdpr",
+            "",
+        ))
+        .await
+        .unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/api/send-all")
+                .header(header::COOKIE, with_session(&cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(CSRF_HEADER, token)
+                .body(Body::from("status=pending"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let job: serde_json::Value = serde_json::from_str(std::str::from_utf8(&body).unwrap()).unwrap();
+
+    // Only globex, the never-contacted broker, is in the run. A run that
+    // ignored the filter would hold both brokers.
+    assert_eq!(job["total"], 1);
+}
+
+/// "Send to Unsent" is the pending-status run the button promises: when
+/// everything has been contacted there is nothing to send, and the request
+/// is refused rather than answered with a job that does nothing.
+#[tokio::test]
+async fn send_to_unsent_targets_only_brokers_never_contacted() {
+    let (app, state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+
+    for broker_id in ["acme", "globex"] {
+        state
+            .store
+            .add_record(&NewRecord::sent(
+                broker_id,
+                &format!("Broker {broker_id}"),
+                "a@b.example",
+                "gdpr",
+                "",
+            ))
+            .await
+            .unwrap();
+    }
+
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/api/send-all")
+                .header(header::COOKIE, with_session(&cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(CSRF_HEADER, token)
+                .body(Body::from("status=pending"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
 /// Two runs would both count against the same daily limit and interleave
 /// their progress.
 #[tokio::test]
@@ -676,8 +764,9 @@ async fn only_one_send_runs_at_a_time() {
                 .method("POST")
                 .uri("/api/send-all")
                 .header(header::COOKIE, with_session(&cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .header(CSRF_HEADER, token)
-                .body(Body::empty())
+                .body(Body::from(""))
                 .unwrap(),
         )
         .await
@@ -698,8 +787,9 @@ async fn sending_before_setup_is_refused() {
                 .method("POST")
                 .uri("/api/send-all")
                 .header(header::COOKIE, with_session(&cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .header(CSRF_HEADER, token)
-                .body(Body::empty())
+                .body(Body::from(""))
                 .unwrap(),
         )
         .await

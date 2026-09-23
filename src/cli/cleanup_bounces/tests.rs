@@ -192,7 +192,7 @@ fn the_count_is_worded_for_one_and_for_several() {
         received_at: None,
     };
 
-    assert!(format_report(&[one.clone()], &[], false).contains("1 address look"));
+    assert!(format_report(std::slice::from_ref(&one), &[], false).contains("1 address look"));
     assert!(format_report(&[one, two], &[], false).contains("2 addresses look"));
 }
 
