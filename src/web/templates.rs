@@ -114,7 +114,16 @@ mod tests {
         let names: Vec<_> = env.templates().map(|(name, _)| name).collect();
 
         assert!(names.contains(&"layout.html"), "found {names:?}");
-        assert!(names.contains(&"dashboard.html"));
+        // The five views of the terminal interface.
+        for page in [
+            "mail.html",
+            "run.html",
+            "captchas.html",
+            "letters.html",
+            "sending.html",
+        ] {
+            assert!(names.contains(&page), "missing {page}, found {names:?}");
+        }
         assert!(names.contains(&"brokers.html"));
         assert!(names.contains(&"partials/broker-list.html"));
         assert!(
@@ -128,19 +137,30 @@ mod tests {
     fn a_page_inherits_the_layout() {
         let env = build().unwrap();
         let rendered = env
-            .get_template("dashboard.html")
+            .get_template("mail.html")
             .unwrap()
             .render(minijinja::context! {
-                title => "Dashboard",
-                profile => minijinja::context! { first_name => "Jane" },
+                title => "Mail",
+                folders => Vec::<minijinja::Value>::new(),
+                folder_id => "needs",
+                folder_label => "needs-you",
+                folder_summary => "0 threads",
+                threads => Vec::<minijinja::Value>::new(),
+                threads_empty => true,
+                has_more => false,
+                more_count => 0,
+                has_message => false,
+                message => Option::<minijinja::Value>::None,
+                run_active => false,
+                run_progress => 0,
             })
-            .expect("the dashboard should render");
+            .expect("the mail view should render");
 
         assert!(
             rendered.contains("<!DOCTYPE html>"),
             "the layout is missing"
         );
-        assert!(rendered.contains("Welcome back, Jane"));
+        assert!(rendered.contains("Mailboxes"));
         assert!(rendered.contains("— eruser</title>"));
     }
 
@@ -149,16 +169,37 @@ mod tests {
     fn a_rendered_page_loads_nothing_from_a_third_party() {
         let env = build().unwrap();
         let rendered = env
-            .get_template("dashboard.html")
+            .get_template("mail.html")
             .unwrap()
-            .render(minijinja::context! { title => "Dashboard" })
+            .render(minijinja::context! {
+                title => "Mail",
+                folders => Vec::<minijinja::Value>::new(),
+                folder_id => "needs",
+                folder_label => "needs-you",
+                folder_summary => "0 threads",
+                threads => Vec::<minijinja::Value>::new(),
+                threads_empty => true,
+                has_more => false,
+                more_count => 0,
+                has_message => false,
+                message => Option::<minijinja::Value>::None,
+                run_active => false,
+                run_progress => 0,
+            })
             .unwrap();
 
-        for host in ["cdn.tailwindcss.com", "unpkg.com", "fonts.googleapis.com"] {
+        for host in [
+            "cdn.tailwindcss.com",
+            "unpkg.com",
+            "fonts.googleapis.com",
+            "googleapis",
+        ] {
             assert!(!rendered.contains(host), "the page still loads from {host}");
         }
         assert!(rendered.contains("/static/css/app.css"));
         assert!(rendered.contains("/static/js/htmx.min.js"));
+        // The terminal chrome carries its own script for the keyboard.
+        assert!(rendered.contains("/static/js/app.js"));
     }
 
     /// Broker names come from a community-edited file and reach the page.
@@ -166,16 +207,38 @@ mod tests {
     fn page_output_is_html_escaped() {
         let env = build().unwrap();
         let rendered = env
-            .get_template("dashboard.html")
+            .get_template("mail.html")
             .unwrap()
             .render(minijinja::context! {
-                title => "Dashboard",
-                profile => minijinja::context! { first_name => "<script>alert(1)</script>" },
+                title => "Mail",
+                folders => Vec::<minijinja::Value>::new(),
+                folder_id => "needs",
+                folder_label => "needs-you",
+                folder_summary => "0 threads",
+                // A broker name is untrusted data: it goes through a
+                // community database, and replies carry whatever a broker
+                // (or anyone forging one) puts in a subject line.
+                threads => vec![minijinja::context! {
+                    href => "/tasks/1",
+                    broker => "<script>alert(1)</script>",
+                    date => "Sep 23",
+                    snippet => "<img src=x onerror=alert(2)>",
+                    code => "NEEDS_YOU",
+                    selected => false,
+                }],
+                threads_empty => false,
+                has_more => false,
+                more_count => 0,
+                has_message => false,
+                message => Option::<minijinja::Value>::None,
+                run_active => false,
+                run_progress => 0,
             })
             .unwrap();
 
         assert!(!rendered.contains("<script>alert(1)</script>"));
         assert!(rendered.contains("&lt;script&gt;"));
+        assert!(!rendered.contains("<img src=x"), "snippet must be escaped");
     }
 
     /// A page naming a field that no longer exists should lose that value,
@@ -184,12 +247,14 @@ mod tests {
     fn a_missing_value_renders_as_nothing() {
         let env = build().unwrap();
         let rendered = env
-            .get_template("dashboard.html")
+            .get_template("run.html")
             .unwrap()
-            .render(minijinja::context! { title => "Dashboard" })
+            .render(minijinja::context! {
+                title => "Run",
+            })
             .expect("a missing field must not fail the render");
 
-        assert!(rendered.contains("Welcome back,"));
+        assert!(rendered.contains("Who should we write to?"));
     }
 
     #[test]

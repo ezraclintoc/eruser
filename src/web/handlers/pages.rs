@@ -9,50 +9,17 @@ use crate::web::auth::CurrentUser;
 use crate::web::error::WebError;
 use crate::web::state::AppState;
 use crate::web::views::{
-    BrokerFilters, BrokerWithStatus, HistoryRow, PipelineStats, Stats, unique_values,
+    BrokerFilters, BrokerWithStatus, HistoryRow, PipelineStats, unique_values,
 };
 
-/// How many history rows the dashboard shows.
-const DASHBOARD_HISTORY: i64 = 10;
 /// How many the history page loads.
 const HISTORY_PAGE_LIMIT: i64 = 1000;
 
-pub async fn dashboard(
-    State(state): State<AppState>,
-    user: CurrentUser,
-    request: Request,
-) -> Result<Response, WebError> {
-    if let Some(redirect) = require_setup(&user) {
-        return Ok(redirect);
-    }
-
-    let config = user.config().clone();
-    let stats = Stats::new(
-        state.brokers.brokers.len(),
-        state.store.stats(user.id()).await?,
-    );
-    let recent: Vec<HistoryRow> = state
-        .store
-        .recent_requests(user.id(), DASHBOARD_HISTORY)
-        .await?
-        .into_iter()
-        .map(HistoryRow::from)
-        .collect();
-
-    render(
-        &state,
-        &user,
-        csrf_of(&request).as_ref(),
-        "dashboard.html",
-        minijinja::context! {
-            title => "Dashboard",
-            profile => config.profile,
-            broker_count => state.brokers.brokers.len(),
-            recent_history => recent,
-            stats => stats,
-            pipeline_stats => pipeline_stats(&state, user.id()).await?,
-        },
-    )
+/// The dashboard is gone: the mail view is the home page now. Kept as a
+/// redirect so old bookmarks and the error page's "back to the dashboard"
+/// link still land somewhere real.
+pub async fn dashboard(_state: State<AppState>, _user: CurrentUser) -> Response {
+    axum::response::Redirect::to("/").into_response()
 }
 
 pub async fn brokers(

@@ -103,7 +103,7 @@ impl IntoResponse for WebError {
         let body = format!(
             "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
              <title>{status}</title></head><body style=\"font-family:system-ui;padding:2rem\">\
-             <h1>{status}</h1><p>{}</p><p><a href=\"/\">Back to the dashboard</a></p>\
+             <h1>{status}</h1><p>{}</p><p><a href=\"/\">Back to the mail view</a></p>\
              </body></html>",
             html_escape(&self.user_message())
         );

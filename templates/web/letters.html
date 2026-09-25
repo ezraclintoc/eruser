@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+{% block main_class %}flush{% endblock %}
+{% block content %}
+<div style="display:grid;grid-template-columns:280px minmax(0,1fr);min-height:calc(100vh - 78px)">
+
+    <!-- Letters list -->
+    <aside style="border-right:1px solid var(--border);background:var(--bg-surface);display:flex;flex-direction:column;padding:20px 0">
+        <span style="padding:0 20px 10px;color:var(--text-faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase">Letters</span>
+        {% for l in letters %}
+        <a href="/letters?letter={{ l.name }}" style="display:flex;flex-direction:column;gap:4px;text-decoration:none;padding:10px 20px;font-size:13px;background:{% if l.selected %}var(--bg-elevated){% else %}transparent{% endif %};color:{% if l.selected %}var(--text-bright){% else %}var(--text-muted){% endif %}">
+            <span style="display:flex;justify-content:space-between;width:100%">
+                <span>{% if l.selected %}&gt;{% else %}&nbsp;{% endif %} {{ l.file }}</span>
+                {% if l.edited %}<span style="color:var(--accent-soft);font-size:12px">modified</span>{% endif %}
+            </span>
+            <span style="padding-left:14px;color:var(--text-muted);font-size:12px;line-height:1.5">{{ l.used }}</span>
+        </a>
+        {% endfor %}
+        <div style="padding:14px 20px;color:var(--text-faint);font-size:12px;line-height:1.6">
+            An edit here replaces the shipped letter until you revert it.
+        </div>
+    </aside>
+
+    <!-- Editor -->
+    <section style="display:flex;flex-direction:column;min-height:0;min-width:0">
+        <div style="padding:12px 32px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-shrink:0">
+            <span style="color:var(--text-muted)">letters/<span style="color:var(--text-bright)">{{ current.file }}</span>
+                {% if current.edited %}<span style="color:var(--accent-soft)">[+] modified</span>{% endif %}
+            </span>
+            <div style="display:flex;gap:4px">
+                <a href="/letters?letter={{ current.name }}" class="btn" style="background:var(--border);border-color:var(--border);color:var(--text-bright)">edit</a>
+                <a href="/letters/{{ current.name }}/preview" class="btn">preview</a>
+            </div>
+        </div>
+
+        {% if message %}
+        <div style="padding:10px 32px;border-bottom:1px solid var(--border);color:{% if message_ok %}var(--ok){% else %}var(--accent-soft){% endif %};font-size:13px">
+            {{ message }}
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/letters/{{ current.name }}" style="flex:1;display:flex;flex-direction:column;min-height:0;padding:20px 32px;gap:14px">
+            {{ csrf_field }}
+            <div style="display:grid;grid-template-columns:60px minmax(0,1fr);align-items:center;gap:10px">
+                <span style="color:var(--text-faint)">subj</span>
+                <input name="subject" value="{{ current.subject }}" class="input" style="padding:7px 10px">
+            </div>
+            <textarea name="body" spellcheck="false" class="input"
+                style="flex:1;min-height:300px;resize:none;background:var(--bg-surface);border-color:var(--border);color:var(--text-primary);font-size:14px;line-height:1.7;padding:18px 20px">{{ current.body }}</textarea>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                <span style="color:var(--text-faint);margin-right:4px">insert</span>
+                {% for token in [ "{broker_name}", "{full_name}", "{email}", "{address}", "{phone}", "{date}" ] %}
+                <button type="button" class="chip" data-insert="{{ token }}">{{ token }}</button>
+                {% endfor %}
+                <span style="margin-left:auto;color:var(--text-faint)">{{ current.words }} words</span>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <button type="submit" class="btn btn-primary">save</button>
+                {% if current.edited %}
+                <button type="submit" formaction="/letters/{{ current.name }}/revert" class="btn"><span style="color:var(--accent)">u</span> revert to shipped</button>
+                {% endif %}
+                <button type="submit" formaction="/letters/{{ current.name }}/test" class="btn"><span style="color:var(--accent)">t</span> send a test to me</button>
+            </div>
+            <div style="color:var(--text-muted);font-size:12px">
+                Placeholders use the letter engine's names — the buttons above insert the common ones. The preview shows exactly what one broker receives.
+            </div>
+        </form>
+    </section>
+</div>
+
+<script>
+    // Insert a placeholder at the cursor in the body textarea.
+    document.querySelectorAll('[data-insert]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var body = document.querySelector('textarea[name="body"]');
+            var token = button.getAttribute('data-insert');
+            var start = body.selectionStart || body.value.length;
+            var end = body.selectionEnd || body.value.length;
+            body.value = body.value.slice(0, start) + token + body.value.slice(end);
+            body.focus();
+            body.selectionStart = body.selectionEnd = start + token.length;
+        });
+    });
+</script>
+{% endblock %}
+
+{% block status_left %} · letters/{{ current.file }}{% endblock %}

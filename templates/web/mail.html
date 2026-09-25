@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+{% block main_class %}flush{% endblock %}
+{% block content %}
+<div style="display:grid;grid-template-columns:200px 380px minmax(0,1fr);min-height:calc(100vh - 78px)">
+
+    <!-- Mailboxes -->
+    <aside style="border-right:1px solid var(--border);background:var(--bg-surface);padding:20px 0;display:flex;flex-direction:column">
+        <span style="padding:0 20px 8px;color:var(--text-faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase">Mailboxes</span>
+        {% for f in folders %}
+        <a href="/?folder={{ f.id }}" style="display:flex;justify-content:space-between;padding:7px 20px;text-decoration:none;font-size:13px;background:{% if f.id == folder_id %}var(--bg-elevated){% else %}transparent{% endif %};color:{% if f.id == folder_id %}var(--text-bright){% else %}var(--text-muted){% endif %}">
+            <span>{% if f.id == folder_id %}&gt;{% else %}&nbsp;{% endif %} {{ f.label }}</span>
+            <span style="color:{% if f.id == folder_id %}{{ f.color }}{% else %}var(--text-faint){% endif %}">{{ f.count }}</span>
+        </a>
+        {% endfor %}
+
+        {% if run_active %}
+        <div style="margin-top:auto;padding:0 20px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;height:4px;gap:2px;background:var(--bg-elevated)">
+                <div style="height:4px;background:var(--ok);width:{{ run_progress }}%"></div>
+            </div>
+            <span style="font-size:11px;color:var(--text-muted)">run in progress · {{ run_progress }}%</span>
+            <a href="/run" style="font-size:12px">watch it</a>
+        </div>
+        {% endif %}
+    </aside>
+
+    <!-- Thread list -->
+    <section style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0" class="app-scrolly">
+        <div style="padding:14px 20px;display:flex;justify-content:space-between;color:var(--text-muted);border-bottom:1px solid var(--border);flex-shrink:0">
+            <span><span style="color:var(--accent-soft)">{{ folder_label }}</span> · {{ folder_summary }}</span>
+            <span style="color:var(--text-faint)">j/k move</span>
+        </div>
+
+        {% for t in threads %}
+        <a href="{{ t.href }}" data-mail-link data-mail-row="{% if t.selected %}selected{% endif %}" style="display:flex;flex-direction:column;gap:5px;text-decoration:none;border-bottom:1px solid var(--border-subtle);padding:12px 20px;background:{% if t.selected %}var(--bg-elevated){% else %}transparent{% endif %}">
+            <span style="display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:8px;align-items:baseline;width:100%">
+                <span style="color:var(--accent)">{% if t.selected %}&gt;{% endif %}</span>
+                <span style="color:{% if t.selected %}var(--text-bright){% else %}var(--text-primary){% endif %};font-weight:{% if t.selected %}600{% else %}400{% endif %}">{{ t.broker }}</span>
+                <span style="color:var(--text-faint);font-size:12px">{{ t.date }}</span>
+            </span>
+            <span style="padding-left:22px;color:var(--text-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.snippet }}</span>
+            <span style="padding-left:22px;font-size:11px;color:var(--text-faint)">{{ t.code }}</span>
+        </a>
+        {% endfor %}
+
+        {% if threads_empty %}
+        <div style="padding:24px 20px;color:var(--text-muted);line-height:1.6">Nothing left here. New replies show up after the next inbox check.</div>
+        {% endif %}
+        {% if has_more %}
+        <div style="padding:12px 20px;color:var(--text-faint)">+ {{ more_count }} more</div>
+        {% endif %}
+    </section>
+
+    <!-- Reading pane -->
+    {% if has_message and message %}
+    <section style="display:flex;flex-direction:column;min-height:0;min-width:0">
+        <div style="padding:16px 32px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:60px minmax(0,1fr);row-gap:4px;font-size:12px;color:var(--text-muted);flex-shrink:0">
+            <span>from</span><span style="color:var(--text-primary)">{{ message.from }}</span>
+            <span>date</span><span>{{ message.stamp }}</span>
+            <span>subj</span><span style="color:var(--text-primary)">{{ message.subject }}</span>
+            <span>tag</span><span style="color:{{ message.color }}">{{ message.tag }}</span>
+        </div>
+
+        <div style="padding:32px 40px;flex:1;display:flex;flex-direction:column;gap:20px;overflow:auto" class="app-scrolly">
+            <div class="letter">
+                {% for p in message.paras %}<p>{{ p }}</p>{% endfor %}
+            </div>
+
+            {% if message.guess %}
+            <div style="max-width:600px;border:1px solid var(--border-strong);padding:12px 14px;display:flex;justify-content:space-between;gap:16px;color:var(--text-muted)">
+                <span>best guess: <span style="color:var(--text-primary)">{{ message.guess.text }}</span></span>
+                <span style="color:var(--accent-soft)">{{ message.guess.confidence }}</span>
+            </div>
+            {% endif %}
+
+            {% if message.history %}
+            <div style="display:flex;flex-direction:column;gap:6px;max-width:600px;border-top:1px solid var(--border);padding-top:16px">
+                <span style="color:var(--text-faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding-bottom:4px">Thread</span>
+                {% for h in message.history %}
+                <div style="display:flex;justify-content:space-between;color:var(--text-muted);font-size:12px"><span>{{ h[0] }}</span><span>{{ h[1] }}</span></div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <div style="padding:14px 32px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;background:var(--bg-surface);flex-shrink:0">
+            {% for a in message.actions %}
+            <form method="POST" action="{{ a.href }}" style="display:contents">{{ csrf_field }}
+                <button type="submit" style="cursor:pointer;font-size:13px;padding:5px 12px;border:1px solid {% if a.primary %}var(--accent){% else %}var(--border-strong){% endif %};background:{% if a.primary %}var(--accent){% else %}transparent{% endif %};color:{% if a.primary %}#fff{% else %}var(--text-primary){% endif %}">
+                    <span style="color:{% if a.primary %}#fff{% else %}var(--accent){% endif %}">{{ a.k }}</span> {{ a.label }}
+                </button>
+            </form>
+            {% endfor %}
+        </div>
+    </section>
+    {% else %}
+    <section style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-faint)">no message selected</section>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block status_left %} · {{ folder_label }} {{ folder_summary }}{% endblock %}
+{% block status_mid %}{% if run_active %}run in progress · {{ run_progress }}%{% endif %}{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{% block main_class %}flush{% endblock %}
+{% block content %}
+<div style="flex:1;overflow:auto" class="app-scrolly">
+    <div style="max-width:760px;margin:0 auto;padding:32px 40px 64px;display:flex;flex-direction:column;gap:20px">
+
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span style="color:var(--text-faint);margin-right:4px">as sent to</span>
+            {% for b in brokers %}
+            <a href="/letters/{{ name }}/preview?broker={{ b.id }}"
+               class="chip {% if b.id == selected_broker %}on{% endif %}" style="text-decoration:none">{{ b.name }}</a>
+            {% endfor %}
+            <a href="/letters?letter={{ name }}" class="btn" style="margin-left:auto">back to editing</a>
+        </div>
+
+        <div style="display:grid;grid-template-columns:60px minmax(0,1fr);row-gap:4px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:14px">
+            <span>to</span><span style="color:var(--text-primary)">{{ to }}</span>
+            <span>from</span><span style="color:var(--text-primary)">{{ from }}</span>
+            <span>subj</span><span style="color:var(--text-primary)">{{ subject }}</span>
+        </div>
+
+        <div class="letter">
+            {% for p in paras %}<p>{{ p }}</p>{% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block status_left %} · letters/{{ file }} · preview{% endblock %}

@@ -151,6 +151,44 @@ impl Engine {
         self.env.get_template(name).is_ok()
     }
 
+    /// Render a letter whose wording someone has overridden.
+    ///
+    /// The edited text is added to the environment for this one render, so
+    /// the shipped copy is untouched and `{broker}`-style placeholders in
+    /// the stored text use exactly the same data as the real send will.
+    /// Strict-undefined applies here too, which is what stops a typo from
+    /// quietly sending a letter with a hole in it.
+    pub fn render_override(
+        &self,
+        template_name: &str,
+        subject: &str,
+        body: &str,
+        profile: &Profile,
+        broker: &Broker,
+    ) -> Result<Email, Error> {
+        let name = format!("__override_{template_name}");
+        let mut env = self.env.clone();
+        env.add_template(&name, body)
+            .map_err(|source| Error::Parse {
+                template: name.clone(),
+                source,
+            })?;
+
+        let template = env
+            .get_template(&name)
+            .map_err(|_| Error::Unknown(name.clone()))?;
+        let data = EmailData::new(profile, broker, template_name);
+        let rendered = template.render(&data).map_err(|source| Error::Render {
+            template: template_name.to_string(),
+            source,
+        })?;
+
+        Ok(Email {
+            subject: subject.to_string(),
+            body: rendered,
+        })
+    }
+
     /// Available template names, sorted, so menus and `--help` are stable.
     pub fn available_templates(&self) -> Vec<String> {
         let mut names: Vec<String> = self
@@ -178,6 +216,22 @@ impl Engine {
     }
 }
 
+/// The letter with the most legal weight where the broker is based.
+///
+/// A heuristic over the one field the database carries: EU and UK brokers
+/// answer to the GDPR, US ones to the CCPA (which is the strongest wording a
+/// California resident can use against them), and the global marketing
+/// databases get the generic letter, which cites several laws at once. This
+/// is the rule behind the "best fit" option on the run page, so it is one
+/// function both the page and the send pipeline call.
+pub fn best_fit(broker: &Broker) -> &'static str {
+    match broker.region.to_lowercase().as_str() {
+        "eu" => "gdpr",
+        "us" => "ccpa",
+        _ => "generic",
+    }
+}
+
 /// Subject lines are fixed per template rather than templated, because
 /// brokers route on them and an injected newline in a subject is a header
 /// injection vector.
@@ -186,6 +240,21 @@ fn subject_for(template_name: &str) -> &'static str {
         "gdpr" => "GDPR Data Erasure Request - Article 17 Right to Erasure",
         "ccpa" => "CCPA Data Deletion Request - Right to Delete Personal Information",
         _ => "Personal Data Removal Request",
+    }
+}
+
+impl Engine {
+    /// The shipped body of a letter, for the editor's starting text.
+    pub fn source_of(&self, name: &str) -> Option<&'static str> {
+        SOURCES
+            .iter()
+            .find(|(template, _)| *template == name)
+            .map(|(_, source)| *source)
+    }
+
+    /// The shipped subject of a letter.
+    pub fn subject_of(&self, name: &str) -> &'static str {
+        subject_for(name)
     }
 }
 

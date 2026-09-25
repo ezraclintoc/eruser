@@ -18,6 +18,7 @@ pub mod accounts;
 pub mod drafts;
 mod error;
 pub mod legacy;
+pub mod letters;
 mod types;
 pub mod users;
 
@@ -177,6 +178,32 @@ impl Store {
         .last_insert_rowid();
 
         Ok(id)
+    }
+
+    /// One request by id, for a page that names a row in its URL.
+    pub async fn record(&self, user_id: i64, id: i64) -> Result<Option<Record>, Error> {
+        let row = sqlx::query("SELECT * FROM removal_requests WHERE user_id = ? AND id = ?")
+            .bind(user_id)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        row.map(record_from_row).transpose()
+    }
+
+    /// One stored reply by id, for the mail view's reading pane.
+    pub async fn broker_response(
+        &self,
+        user_id: i64,
+        id: i64,
+    ) -> Result<Option<BrokerResponse>, Error> {
+        let row = sqlx::query("SELECT * FROM broker_responses WHERE user_id = ? AND id = ?")
+            .bind(user_id)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        row.map(response_from_row).transpose()
     }
 
     pub async fn last_request_for_broker(

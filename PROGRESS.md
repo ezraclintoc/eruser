@@ -93,6 +93,47 @@ Each of these has a test pinning it, so it cannot come back.
 
 ## Changelog
 
+### `web` — the terminal interface
+
+A full re-skin from the dark dashboard to a keyboard-driven terminal design:
+IBM Plex Mono chrome, serif letters, one accent, a status bar, and numbered
+tabs (1 mail · 2 run · 3 captchas · 4 letters · 5 sending; `w` starts a run).
+Both fonts are vendored, so the page still loads with no network and reaches
+no third party — the CSP and asset tests still pin that.
+
+The mail view is the home page. It is not a mailbox but a view over what
+eruser already knows: pending tasks land in `needs-you`, replies the
+classifier could not place in `check`, and the run's history in `waiting`,
+`removed`, and `no-record`. Reading an unsure reply shows its best guess and
+confidence, and filing it (`y` / `w`) goes through the same classification
+update a reclassify uses, so a human's ruling leaves the same marks a rule's
+would.
+
+The run wizard replaces the dashboard's send form: profile, recipients
+(all / never written to / US only / not written to in a while), letter, and
+a live progress pane that polls the active job. Two things it adds are real
+rather than decorative — `auto` resolves the best-fit letter per broker
+(GDPR where the broker is EU-based, CCPA for US, generic otherwise) through
+one function shared by page and pipeline, and `stale_days` filters on when
+the broker was last contacted, with never-contacted brokers always passing.
+
+Letters are now editable from the web. The three shipped templates were
+embedded and immutable; an edit stores an override per person in the
+database (new migration) and wins until reverted, so a wording fix in a
+release still reaches anyone who has not gone out of their way. Subjects are
+flattened to one line on the way in — a subject that spans lines is header
+injection. Previews render against a real broker from the database, and the
+test button sends one to yourself through the ordinary sender.
+
+The sending page gathers what was spread across accounts and settings: the
+rotation with per-account usage, the pace, the read-only mailbox, and how
+replies are sorted. The old accounts page still exists and links from it.
+A stray dead link to `/monitor` was removed rather than made to work — the
+monitor is a CLI command, not a page.
+
+The old dashboard is gone; `/` serves the mail view and the dashboard route
+redirects there for old bookmarks.
+
 ### `reply` — an auto-replier, in drafts
 
 The roadmap's "AI response pipeline" as a first instalment: when the monitor

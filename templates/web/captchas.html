@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="app-scrolly" style="flex:1;overflow:auto">
+    <div style="max-width:1000px;margin:0 auto;padding:40px 32px 64px;display:flex;flex-direction:column;gap:40px">
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="color:var(--text-muted)">{% if solver_enabled %}solver on · {{ solver_url }}{% else %}solver off{% endif %}</span>
+            <h1 style="font-size:32px;font-weight:400;margin:0">
+                {% if waiting > 0 %}{{ waiting }} forms are stuck on a captcha.{% else %}No captchas waiting.{% endif %}
+            </h1>
+        </div>
+
+        <!-- The waiting list -->
+        <div style="display:flex;flex-direction:column">
+            <div style="display:grid;grid-template-columns:200px 120px minmax(0,1fr) 150px;gap:12px;padding:8px 0;color:var(--text-faint);font-size:12px;border-bottom:1px solid var(--border)">
+                <span>broker</span><span>kind</span><span>what to do</span><span></span>
+            </div>
+
+            {% for c in captchas %}
+            <div style="display:grid;grid-template-columns:200px 120px minmax(0,1fr) 150px;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-subtle);align-items:baseline">
+                <span style="color:var(--text-bright)">{{ c.broker }}</span>
+                <span style="color:var(--accent-soft)">captcha task</span>
+                <span style="color:var(--text-secondary)">{{ c.instructions }}</span>
+                <span style="display:flex;gap:6px;justify-content:flex-end">
+                    {% if c.helper_url %}
+                    <a href="{{ c.helper_url }}" class="btn" style="font-size:12px;padding:3px 10px">open and solve</a>
+                    {% endif %}
+                </span>
+            </div>
+            {% endfor %}
+
+            {% for f in stuck_forms %}
+            <div style="display:grid;grid-template-columns:200px 120px minmax(0,1fr) 150px;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-subtle);align-items:baseline">
+                <span style="color:var(--text-bright)">{{ f.broker }}</span>
+                <span style="color:var(--accent-soft)">form stopped</span>
+                <span style="color:var(--text-secondary)">{{ f.instructions }}</span>
+                <span style="display:flex;gap:6px;justify-content:flex-end">
+                    {% if f.helper_url %}
+                    <a href="{{ f.helper_url }}" class="btn" style="font-size:12px;padding:3px 10px">open and solve</a>
+                    {% endif %}
+                </span>
+            </div>
+            {% endfor %}
+
+            {% if waiting == 0 %}
+            <div style="padding:14px 0;color:var(--text-muted)">Nothing waiting. New ones show up after the next form run.</div>
+            {% endif %}
+        </div>
+
+        <!-- Solver settings -->
+        <div style="display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px">
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="color:var(--text-faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase">Solving</span>
+                <span style="color:var(--text-muted);font-size:12px;line-height:1.6">
+                    reCAPTCHA v3 is invisible and usually passes on its own, so it never lands here.
+                    A solver, when one is configured, gets the challenge before you do — but its claim
+                    of success is never taken at its word: the page is re-read, and only a challenge
+                    that has genuinely gone lets the fill proceed.
+                </span>
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:16px;display:flex;flex-direction:column;gap:14px">
+                <div style="display:flex;flex-direction:column;gap:4px">
+                    <span style="color:var(--text-primary)">{% if solver_enabled %}Use a solving service{% else %}I'll solve them{% endif %}</span>
+                    <span style="color:var(--text-muted);font-size:12px;line-height:1.5">
+                        {% if solver_enabled %}
+                        Challenges go to the sidecar at <span style="color:var(--text-primary)">{{ solver_url }}</span> first;
+                        whatever it cannot solve is left for you exactly as if there were no solver at all.
+                        {% else %}
+                        Every challenge waits for you. Point <span style="color:var(--text-primary)">pipeline.captcha_solver</span>
+                        at your own sidecar service in config.yaml to change that — eruser ships no solving models.
+                        {% endif %}
+                    </span>
+                </div>
+                {% if solver_enabled %}
+                <div style="color:var(--text-muted);font-size:12px">
+                    timeout {{ solver_timeout }}s per challenge
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block status_left %} · {{ waiting }} waiting{% endblock %}

@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 use crate::broker::Broker;
-use crate::history::{self, BrokerStatus, PipelineStatus, Record};
+use crate::history::{self, BrokerStatus, PipelineStatus, Record, ResponseType};
 
 /// Headline counts for the dashboard.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -226,6 +226,186 @@ pub fn unique_values(brokers: &[Broker], field: impl Fn(&Broker) -> &str) -> Vec
     values.sort();
     values.dedup();
     values
+}
+
+// -------------------------------------------------------------------
+// The run wizard
+// -------------------------------------------------------------------
+
+/// Extra scoping the run wizard accepts beyond the broker-page filters.
+///
+/// The mockup's "not written to in a while" needs a number of days, and the
+/// letter choice needs to travel with the run so a retry sends the same
+/// thing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct RunFilters {
+    #[serde(flatten)]
+    pub base: BrokerFilters,
+    /// Send only to brokers last contacted more than this many days ago.
+    /// Zero (the default) means no staleness filter.
+    pub stale_days: i64,
+    /// `generic`, `ccpa`, `gdpr`, or `auto` for the per-broker best fit.
+    pub template: String,
+}
+
+impl RunFilters {
+    /// The template this run actually names, resolved from `auto`.
+    ///
+    /// A concrete name is stored as the run's template, so history and the
+    /// resume file record what really went out; `auto` only exists at the
+    /// moment of choosing.
+    pub fn resolved_template(&self, broker: &Broker) -> String {
+        match self.template.as_str() {
+            "auto" | "" => crate::template::best_fit(broker).to_string(),
+            other => other.to_string(),
+        }
+    }
+
+    /// Whether a broker passes the staleness filter.
+    ///
+    /// Never-contacted brokers always pass: the point of the filter is to
+    /// skip brokers already dealt with recently, not to skip ones nobody has
+    /// written to yet.
+    pub fn matches_staleness(&self, status: Option<&history::BrokerStatus>) -> bool {
+        if self.stale_days <= 0 {
+            return true;
+        }
+        let Some(status) = status else {
+            return true;
+        };
+        let Some(last) = status.last_sent else {
+            return true;
+        };
+        let age = chrono::Utc::now().signed_duration_since(last);
+        age.num_days() >= self.stale_days
+    }
+}
+
+/// One row of the run wizard's broker list, as the page reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RunBrokerRow {
+    pub id: String,
+    pub name: String,
+    pub region: String,
+    /// The letter the run will actually send this broker.
+    pub template: String,
+    pub status: &'static str,
+}
+
+/// The letter split a run would produce, for the wizard's confirm step.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TemplateSplitRow {
+    pub file: String,
+    pub who: &'static str,
+    pub n: usize,
+}
+
+/// How the selected brokers divide across the three letters.
+///
+/// The wizard shows this when `auto` is picked, so "best fit for each
+/// broker" is a promise with numbers behind it rather than a vibe.
+pub fn template_split(brokers: &[&Broker]) -> Vec<TemplateSplitRow> {
+    let mut gdpr = 0usize;
+    let mut ccpa = 0usize;
+    for broker in brokers {
+        match crate::template::best_fit(broker) {
+            "gdpr" => gdpr += 1,
+            "ccpa" => ccpa += 1,
+            _ => {}
+        }
+    }
+    let generic = brokers.len().saturating_sub(gdpr + ccpa);
+
+    vec![
+        TemplateSplitRow {
+            file: "gdpr.txt".into(),
+            who: "EU or UK based",
+            n: gdpr,
+        },
+        TemplateSplitRow {
+            file: "ccpa.txt".into(),
+            who: "US based",
+            n: ccpa,
+        },
+        TemplateSplitRow {
+            file: "generic.txt".into(),
+            who: "everyone else",
+            n: generic,
+        },
+    ]
+}
+
+// -------------------------------------------------------------------
+// The mail view
+// -------------------------------------------------------------------
+
+/// Which mailbox a thread sits in. The names are the mockup's, and the
+/// status bar and folder list both read them, so they are strings rather
+/// than an enum the templates would have to translate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct MailFolder {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub count: usize,
+    /// Hex colour for the count, as the design styles it.
+    pub color: &'static str,
+}
+
+/// One row of the thread list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MailThread {
+    /// Where to go when the row is opened.
+    pub href: String,
+    pub broker: String,
+    /// Short date, as the list shows it.
+    pub date: String,
+    pub snippet: String,
+    /// `NEEDS_YOU · id`, `REMOVED`, and so on.
+    pub code: String,
+    pub selected: bool,
+}
+
+/// A colour for a pipeline stage, matching the mockup's palette.
+pub fn stage_color(status: PipelineStatus) -> &'static str {
+    match status {
+        PipelineStatus::Confirmed => "#7fa88a",
+        PipelineStatus::AwaitingResponse | PipelineStatus::AwaitingConfirmation => "#8a8276",
+        PipelineStatus::FormRequired
+        | PipelineStatus::AwaitingCaptcha
+        | PipelineStatus::Failed
+        | PipelineStatus::Rejected => "#e0703a",
+        _ => "#a79f92",
+    }
+}
+
+/// A short label for a pipeline stage, as the thread list shows it.
+pub fn stage_label(status: PipelineStatus) -> &'static str {
+    match status {
+        PipelineStatus::EmailSent => "SENT",
+        PipelineStatus::AwaitingResponse => "WAITING",
+        PipelineStatus::FormRequired => "NEEDS_YOU · form",
+        PipelineStatus::FormFilled => "FORM SENT",
+        PipelineStatus::AwaitingCaptcha => "NEEDS_YOU · captcha",
+        PipelineStatus::CaptchaSolved => "CAPTCHA OK",
+        PipelineStatus::AwaitingConfirmation => "NEEDS_YOU · confirm",
+        PipelineStatus::Confirmed => "REMOVED",
+        PipelineStatus::Failed => "BOUNCED",
+        PipelineStatus::Rejected => "REFUSED",
+    }
+}
+
+/// The display name for a classified reply, as the mail view shows it.
+pub fn response_guess(response_type: ResponseType) -> &'static str {
+    match response_type {
+        ResponseType::FormRequired => "wants a form",
+        ResponseType::ConfirmationRequired => "sent a confirm link",
+        ResponseType::Success => "removed",
+        ResponseType::Rejected => "refused",
+        ResponseType::Bounced => "bounced",
+        ResponseType::Pending => "still waiting",
+        ResponseType::Unknown => "unclear",
+    }
 }
 
 #[cfg(test)]

@@ -58,6 +58,12 @@ jobs:
   audit:
     name: Security audit
     runs-on: ubuntu-latest
+    permissions:
+      # audit-check records its result as a check run on the commit, which
+      # the read-only default token cannot do.
+      checks: write
+      # Advisory summaries go into the run's security tab.
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2

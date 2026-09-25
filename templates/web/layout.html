@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,723 +10,481 @@
          its stylesheet from a CDN tells that CDN every time you open it. -->
     <link rel="stylesheet" href="/static/css/app.css">
     <script src="/static/js/htmx.min.js" defer></script>
+    <script src="/static/js/app.js" defer></script>
 
     <style>
         /* ============================================
-           ERASER DESIGN SYSTEM - "Digital Sanctuary"
+           ERUSER DESIGN SYSTEM — "Terminal"
+           Mono chrome, serif letters, one accent.
            ============================================ */
 
-        /* CSS Custom Properties - Dark Theme (Default) */
         :root {
-            --bg-base: #020617;
-            --bg-surface: #0f172a;
-            --bg-elevated: #1e293b;
-            --bg-glass: rgba(15, 23, 42, 0.8);
+            /* Surfaces, dark to darker. */
+            --bg-base: #161412;
+            --bg-surface: #12100e;
+            --bg-elevated: #221f1b;
+            --bg-status: #26221d;
 
-            --accent: #10b981;
-            --accent-hover: #34d399;
-            --accent-muted: rgba(16, 185, 129, 0.15);
-            --accent-glow: rgba(16, 185, 129, 0.4);
+            /* Ink. */
+            --text-primary: #e6dfd3;
+            --text-bright: #ffffff;
+            --text-secondary: #a79f92;
+            --text-muted: #8a8276;
+            --text-faint: #6f675c;
 
-            --success: #10b981;
-            --warning: #f59e0b;
-            --error: #f43f5e;
+            /* Lines. */
+            --border: #2b2723;
+            --border-strong: #3a352f;
+            --border-subtle: #221f1b;
 
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
-            --text-muted: #64748b;
+            /* One accent, and the states it doubles for. */
+            --accent: #c2410c;
+            --accent-soft: #e0703a;
+            --ok: #7fa88a;
+            --warning: #e0703a;
 
-            --border: #334155;
-            --border-subtle: #1e293b;
-
-            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+            --shadow: none;
+            --shadow-lg: none;
         }
-
-        /* Light Theme */
-        .light {
-            --bg-base: #f8fafc;
-            --bg-surface: #ffffff;
-            --bg-elevated: #f1f5f9;
-            --bg-glass: rgba(255, 255, 255, 0.8);
-
-            --accent: #059669;
-            --accent-hover: #10b981;
-            --accent-muted: rgba(5, 150, 105, 0.1);
-            --accent-glow: rgba(5, 150, 105, 0.3);
-
-            --text-primary: #0f172a;
-            --text-secondary: #475569;
-            --text-muted: #94a3b8;
-
-            --border: #e2e8f0;
-            --border-subtle: #f1f5f9;
-
-            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
-        }
-
-        /* ============================================
-           BASE STYLES
-           ============================================ */
 
         * {
-            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+            font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
         }
 
-        h1, h2, h3, h4, h5, h6, .font-display {
-            font-family: 'Outfit', system-ui, sans-serif;
+        /* The serif is for letters and headings: what you read. */
+        h1, h2, h3, .font-display, .serif {
+            font-family: 'Newsreader', Georgia, 'Times New Roman', serif;
+            color: var(--text-bright);
         }
 
         body {
             background: var(--bg-base);
             color: var(--text-secondary);
             min-height: 100vh;
-            position: relative;
+            font-size: 13px;
+            line-height: 1.5;
         }
 
-        /* Subtle gradient background */
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: radial-gradient(ellipse at 50% 0%, var(--bg-surface) 0%, var(--bg-base) 70%);
-            z-index: -2;
+        a {
+            color: var(--text-primary);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            text-decoration-color: var(--border-strong);
         }
+        a:hover { color: var(--accent-soft); text-decoration-color: var(--accent-soft); }
 
-        /* Noise texture overlay */
-        body::after {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-            opacity: 0.03;
-            pointer-events: none;
-            z-index: -1;
-        }
+        button { font-family: inherit; cursor: pointer; }
 
-        .light body::after {
-            opacity: 0.02;
-        }
+        ::selection { background: var(--accent); color: #fff; }
 
-        /* ============================================
-           ANIMATIONS
-           ============================================ */
-
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        @keyframes pulseGlow {
-            0%, 100% { box-shadow: 0 0 20px var(--accent-glow); }
-            50% { box-shadow: 0 0 30px var(--accent-glow), 0 0 40px var(--accent-glow); }
-        }
-
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-8px); }
-        }
-
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
-
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .fade-in {
-            animation: fadeIn 0.4s ease-out;
-        }
-
-        .fade-in-up {
-            animation: fadeInUp 0.5s ease-out;
-        }
-
-        .float {
-            animation: float 3s ease-in-out infinite;
-        }
-
-        /* Staggered animations for children */
-        .stagger > * {
-            opacity: 0;
-            animation: fadeInUp 0.5s ease-out forwards;
-        }
-        .stagger > *:nth-child(1) { animation-delay: 0.1s; }
-        .stagger > *:nth-child(2) { animation-delay: 0.2s; }
-        .stagger > *:nth-child(3) { animation-delay: 0.3s; }
-        .stagger > *:nth-child(4) { animation-delay: 0.4s; }
-        .stagger > *:nth-child(5) { animation-delay: 0.5s; }
-        .stagger > *:nth-child(6) { animation-delay: 0.6s; }
-
-        /* HTMX indicators */
-        .htmx-indicator { display: none; }
-        .htmx-request .htmx-indicator { display: inline-flex; }
-        .htmx-request.htmx-indicator { display: inline-flex; }
-
-        /* ============================================
-           COMPONENT STYLES
-           ============================================ */
-
-        /* Cards */
-        .card {
+        /* ---- Flat surfaces: lines instead of shadows. ---- */
+        .card, .card-glass {
             background: var(--bg-surface);
             border: 1px solid var(--border);
-            border-radius: 16px;
-            box-shadow: var(--shadow);
-            transition: all 0.2s ease;
+            border-radius: 0;
+            box-shadow: none;
         }
+        .card:hover { box-shadow: none; }
 
-        .card:hover {
-            box-shadow: var(--shadow-lg);
-        }
-
-        .card-glass {
-            background: var(--bg-glass);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-        }
-
-        /* Buttons */
+        /* ---- Buttons: square, bordered, accent for the main action. ---- */
         .btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
-            padding: 10px 20px;
-            font-weight: 500;
-            font-size: 14px;
-            border-radius: 10px;
-            transition: all 0.2s ease;
-            cursor: pointer;
-            border: none;
+            padding: 6px 14px;
+            font-weight: 400;
+            font-size: 13px;
+            border-radius: 0;
+            border: 1px solid var(--border-strong);
+            background: transparent;
+            color: var(--text-primary);
             text-decoration: none;
+            transition: background 0.1s ease, color 0.1s ease;
         }
+        .btn:hover { background: var(--bg-elevated); color: var(--text-bright); }
 
         .btn-primary {
+            border-color: var(--accent);
             background: var(--accent);
-            color: white;
-            box-shadow: 0 0 20px var(--accent-glow);
+            color: #fff;
         }
+        .btn-primary:hover { background: var(--accent-soft); border-color: var(--accent-soft); color: #fff; }
 
-        .btn-primary:hover {
-            background: var(--accent-hover);
-            transform: translateY(-1px);
-            box-shadow: 0 0 30px var(--accent-glow);
-        }
+        .btn-secondary { background: transparent; color: var(--text-primary); }
+        .btn-secondary:hover { background: var(--bg-elevated); }
 
-        .btn-secondary {
-            background: var(--bg-elevated);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
-        }
-
-        .btn-secondary:hover {
-            background: var(--border);
-            border-color: var(--text-muted);
-        }
-
-        .btn-ghost {
-            background: transparent;
-            color: var(--text-secondary);
-        }
-
-        .btn-ghost:hover {
-            background: var(--bg-elevated);
-            color: var(--text-primary);
-        }
+        .btn-ghost { border-color: transparent; color: var(--text-muted); }
+        .btn-ghost:hover { color: var(--text-bright); background: var(--bg-elevated); }
 
         .btn-danger {
-            background: rgba(244, 63, 94, 0.1);
-            color: var(--error);
-            border: 1px solid rgba(244, 63, 94, 0.3);
+            border-color: transparent;
+            background: transparent;
+            color: var(--accent-soft);
         }
+        .btn-danger:hover { color: var(--accent-soft); text-decoration: underline; }
 
-        .btn-danger:hover {
-            background: rgba(244, 63, 94, 0.2);
-        }
-
-        /* Form inputs */
-        .input {
+        /* ---- Inputs: bordered, dark, mono. ---- */
+        .input, select.input, textarea.input {
             width: 100%;
-            padding: 10px 14px;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            color: var(--text-primary);
-            font-size: 14px;
-            transition: all 0.2s ease;
+            padding: 6px 10px;
+            background: transparent;
+            border: 1px solid var(--border-strong);
+            border-radius: 0;
+            color: var(--text-bright);
+            font-size: 13px;
         }
-
         .input:focus {
             outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-muted);
+            border-color: var(--text-secondary);
+            box-shadow: none;
         }
+        .input::placeholder { color: var(--text-faint); }
+        select.input option { background: var(--bg-base); color: var(--text-primary); }
 
-        .input::placeholder {
-            color: var(--text-muted);
-        }
-
-        /* Labels */
         .label {
             display: block;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 400;
+            color: var(--text-faint);
             margin-bottom: 6px;
         }
 
-        /* Badges */
+        /* ---- Badges: plain text in a state colour. ---- */
         .badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 4px 10px;
-            font-size: 12px;
-            font-weight: 500;
-            border-radius: 20px;
+            padding: 2px 8px;
+            font-size: 11px;
+            font-weight: 400;
+            border-radius: 0;
+            border: 1px solid var(--border-strong);
         }
+        .badge-success { background: transparent; color: var(--ok); border-color: transparent; }
+        .badge-warning { background: transparent; color: var(--warning); border-color: transparent; }
+        .badge-error   { background: transparent; color: var(--accent-soft); border-color: transparent; }
+        .badge-neutral { background: transparent; color: var(--text-muted); border-color: transparent; }
 
-        .badge-success {
-            background: rgba(16, 185, 129, 0.15);
-            color: var(--success);
-        }
-
-        .badge-warning {
-            background: rgba(245, 158, 11, 0.15);
-            color: var(--warning);
-        }
-
-        .badge-error {
-            background: rgba(244, 63, 94, 0.15);
-            color: var(--error);
-        }
-
-        .badge-neutral {
-            background: var(--bg-elevated);
-            color: var(--text-secondary);
-        }
-
-        /* Status dot */
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-
-        .status-dot-success { background: var(--success); }
+        .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+        .status-dot-success { background: var(--ok); }
         .status-dot-warning { background: var(--warning); }
-        .status-dot-error { background: var(--error); }
+        .status-dot-error { background: var(--accent); }
 
-        /* Tables */
-        .table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
+        /* ---- Tables: rules between rows, nothing else. ---- */
+        .table { width: 100%; border-collapse: collapse; }
         .table th {
             text-align: left;
-            padding: 12px 16px;
-            font-size: 12px;
-            font-weight: 600;
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 400;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            background: var(--bg-elevated);
+            letter-spacing: 0.08em;
+            color: var(--text-faint);
+            background: transparent;
             border-bottom: 1px solid var(--border);
         }
-
         .table td {
-            padding: 16px;
+            padding: 10px 12px;
             border-bottom: 1px solid var(--border-subtle);
             color: var(--text-secondary);
         }
+        .table tr:hover td { background: var(--bg-elevated); }
+        .table tr:last-child td { border-bottom: none; }
 
-        .table tr:hover td {
-            background: var(--bg-elevated);
-        }
-
-        .table tr:last-child td {
-            border-bottom: none;
-        }
-
-        /* Navigation link */
-        .nav-link {
-            position: relative;
-            padding: 8px 16px;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-secondary);
-            text-decoration: none;
-            transition: color 0.2s ease;
-        }
-
-        .nav-link:hover {
-            color: var(--text-primary);
-        }
-
-        .nav-link.active {
-            color: var(--accent);
-        }
-
-        .nav-link::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            width: 0;
-            height: 2px;
-            background: var(--accent);
-            transition: all 0.2s ease;
-            transform: translateX(-50%);
-        }
-
-        .nav-link:hover::after,
-        .nav-link.active::after {
-            width: 100%;
-        }
-
-        /* Account menu */
-        .account-menu {
-            position: relative;
-        }
-
-        .account-button {
+        /* ---- Header chrome. ---- */
+        .chrome {
+            height: 48px;
             display: flex;
             align-items: center;
-            gap: 8px;
-            height: 40px;
-            padding: 0 12px;
-            border-radius: 10px;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
-            color: var(--text-secondary);
-            font-size: 14px;
-            font-weight: 500;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 0 24px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            background: var(--bg-base);
+        }
+        .chrome-logo { font-weight: 600; color: var(--text-bright); font-size: 13px; text-decoration: none; }
+        .chrome-logo:hover { color: var(--text-bright); }
+        .chrome-logo .cursor { color: var(--accent); }
+
+        .tabs { display: flex; gap: 4px; align-items: center; }
+        .tab {
+            border: none;
             cursor: pointer;
-            transition: all 0.2s ease;
+            font-size: 13px;
+            padding: 6px 10px;
+            background: transparent;
+            color: var(--text-muted);
+            text-decoration: none;
+            white-space: nowrap;
         }
+        .tab .key { color: var(--text-faint); }
+        .tab:hover { color: var(--text-primary); background: var(--bg-elevated); }
+        .tab.active { color: var(--text-bright); background: var(--border); }
 
-        .account-button:hover {
-            background: var(--border);
-            color: var(--text-primary);
+        .chrome-side { display: flex; gap: 18px; align-items: center; color: var(--text-muted); }
+
+        /* ---- User menu. ---- */
+        .account-menu { position: relative; }
+        .account-button {
+            border: none;
+            background: none;
+            color: var(--text-muted);
+            font-size: 13px;
+            cursor: pointer;
+            padding: 0;
         }
-
-        .account-initial {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: var(--accent);
-            color: white;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
+        .account-button:hover { color: var(--text-primary); }
         .account-panel {
             position: absolute;
             right: 0;
-            top: calc(100% + 8px);
-            min-width: 190px;
-            padding: 6px;
-            border-radius: 12px;
+            top: 28px;
+            width: 260px;
+            padding: 6px 0;
             background: var(--bg-surface);
-            border: 1px solid var(--border);
-            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-strong);
             z-index: 60;
         }
-
         .account-item {
-            display: block;
+            display: flex;
+            gap: 8px;
             width: 100%;
-            padding: 8px 12px;
+            padding: 8px 14px;
             border: none;
-            border-radius: 8px;
+            border-radius: 0;
             background: transparent;
-            color: var(--text-secondary);
-            font-size: 14px;
+            color: var(--text-primary);
+            font-size: 13px;
             text-align: left;
             text-decoration: none;
             cursor: pointer;
         }
+        .account-item:hover { background: var(--bg-elevated); color: var(--text-bright); }
+        .account-item .cursor { color: var(--accent); width: 12px; display: inline-block; }
+        .account-item-danger { color: var(--text-muted); }
+        .account-item-danger:hover { color: var(--accent-soft); }
 
-        .account-item:hover {
-            background: var(--bg-elevated);
-            color: var(--text-primary);
-        }
-
-        .account-item-danger:hover {
-            color: var(--error);
-        }
-
-        /* Theme toggle */
-        .theme-toggle {
-            width: 40px;
-            height: 40px;
+        /* ---- Status bar. ---- */
+        .statusbar {
+            height: 30px;
+            flex-shrink: 0;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            justify-content: center;
-            border-radius: 10px;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border);
+            gap: 16px;
+            padding: 0 24px;
+            background: var(--bg-status);
+            color: var(--text-secondary);
+            font-size: 12px;
+            overflow: hidden;
+        }
+        .statusbar > span { white-space: nowrap; }
+        .statusbar .mode { color: var(--text-bright); }
+        .statusbar .mid {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text-muted);
+        }
+        .statusbar .ok-dot { color: var(--ok); }
+
+        /* ---- Panels for page content. ---- */
+        .panel { background: transparent; border: 1px solid var(--border); }
+        .panel-head {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-faint);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        /* ---- Option rows: (•) radio lists. ---- */
+        .optlist { border-top: 1px solid var(--border); }
+        .opt {
+            display: grid;
+            grid-template-columns: 36px minmax(0, 1fr);
+            gap: 8px;
+            width: 100%;
+            border: none;
+            border-bottom: 1px solid var(--border-subtle);
+            background: transparent;
+            text-align: left;
+            padding: 12px 10px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            font-size: 13px;
+        }
+        .opt .mark { color: var(--text-faint); }
+        .opt.selected { background: var(--bg-elevated); }
+        .opt.selected .mark { color: var(--accent-soft); }
+        .opt .title { color: var(--text-primary); display: block; }
+        .opt .subtitle { color: var(--text-muted); font-size: 12px; display: block; margin-top: 2px; }
+
+        /* ---- Chips: toggle filters. ---- */
+        .chip {
+            font-size: 12px;
+            padding: 4px 10px;
+            cursor: pointer;
+            border: 1px solid var(--border-strong);
+            background: transparent;
             color: var(--text-secondary);
         }
+        .chip.on {
+            border-color: var(--text-primary);
+            background: var(--text-primary);
+            color: var(--bg-base);
+        }
 
-        .theme-toggle:hover {
-            background: var(--border);
+        /* ---- Definition tables (run wizard step 1, message headers). ---- */
+        .kv {
+            display: grid;
+            grid-template-columns: 100px minmax(0, 1fr);
+            border-top: 1px solid var(--border);
+        }
+        .kv > .k {
+            color: var(--text-faint);
+            padding: 9px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .kv > .v {
+            padding: 9px 0;
+            border-bottom: 1px solid var(--border-subtle);
             color: var(--text-primary);
         }
 
-        .theme-toggle svg {
-            width: 20px;
-            height: 20px;
+        /* ---- Letters: the serif body. ---- */
+        .letter {
+            font-family: 'Newsreader', Georgia, serif;
+            font-size: 18px;
+            line-height: 1.65;
+            color: #ebe4d8;
+            max-width: 620px;
         }
+        .letter p { margin: 0 0 16px; white-space: pre-line; }
 
-        /* Spinner */
+        /* ---- HTMX indicators. ---- */
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline-flex; }
+        .htmx-request.htmx-indicator { display: inline-flex; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
         .spinner {
-            width: 16px;
-            height: 16px;
-            border: 2px solid var(--border);
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border-strong);
             border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 0.6s linear infinite;
         }
 
-        /* Progress ring */
-        .progress-ring {
-            transform: rotate(-90deg);
-        }
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-        .progress-ring-bg {
-            stroke: var(--border);
-        }
+        /* Scrollbars: thin and dark. */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-base); }
+        ::-webkit-scrollbar-thumb { background: var(--border-strong); }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
-        .progress-ring-fill {
-            stroke: var(--accent);
-            stroke-linecap: round;
-            transition: stroke-dashoffset 0.5s ease;
-        }
-
-        /* Scrollbar styling */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg-base);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border);
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-muted);
-        }
-
-        /* Text utilities */
+        /* Text utilities the pages use. */
         .text-primary { color: var(--text-primary); }
+        .text-bright { color: var(--text-bright); }
         .text-secondary { color: var(--text-secondary); }
         .text-muted { color: var(--text-muted); }
-        .text-accent { color: var(--accent); }
-        .text-success { color: var(--success); }
+        .text-faint { color: var(--text-faint); }
+        .text-accent { color: var(--accent-soft); }
+        .text-success { color: var(--ok); }
         .text-warning { color: var(--warning); }
-        .text-error { color: var(--error); }
+        .text-error { color: var(--accent-soft); }
 
-        /* Background utilities */
-        .bg-base { background: var(--bg-base); }
-        .bg-surface { background: var(--bg-surface); }
-        .bg-elevated { background: var(--bg-elevated); }
-
-        /* Mobile menu */
-        .mobile-menu {
-            display: none;
+        /* Default page: centred with room to breathe. Full-bleed views
+           (mail, letters) override with `flush`. */
+        .page {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 28px 32px 48px;
+            width: 100%;
+            box-sizing: border-box;
         }
+        .flush { max-width: none; padding: 0; width: auto; }
 
-        @media (max-width: 640px) {
-            .desktop-nav { display: none; }
-            .mobile-menu { display: block; }
+        /* The app fills the viewport: chrome, content, status bar. */
+        .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+        .app-main { flex: 1 1 auto; }
+        .app-scrolly { overflow: auto; }
+
+        @media (max-width: 900px) {
+            .chrome { padding: 0 12px; gap: 8px; }
+            .tab { padding: 6px 6px; }
+            .statusbar { padding: 0 12px; }
         }
     </style>
-
-    <script>
-        // Theme management
-        const getTheme = () => {
-            const stored = localStorage.getItem('eraser-theme');
-            if (stored) return stored;
-            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        };
-
-        const setTheme = (theme) => {
-            document.documentElement.classList.toggle('light', theme === 'light');
-            localStorage.setItem('eraser-theme', theme);
-
-            // Update toggle icon
-            const toggle = document.getElementById('theme-toggle');
-            if (toggle) {
-                toggle.innerHTML = theme === 'light'
-                    ? '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>'
-                    : '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>';
-            }
-        };
-
-        const toggleTheme = () => {
-            const current = getTheme();
-            setTheme(current === 'dark' ? 'light' : 'dark');
-        };
-
-        // Initialize theme immediately to prevent flash
-        setTheme(getTheme());
-    </script>
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="fixed top-0 left-0 right-0 z-50">
-        <div class="max-w-6xl mx-auto px-4 py-3">
-            <div class="card-glass px-4 py-3">
-                <div class="flex items-center justify-between">
-                    <!-- Logo -->
-                    <a href="/" class="flex items-center gap-3 text-decoration-none">
-                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg" style="box-shadow: 0 0 20px var(--accent-glow);">
-                            <svg class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                            </svg>
-                        </div>
-                        <span class="font-display text-xl font-bold text-primary">eruser</span>
-                    </a>
+<div class="app-shell">
 
-                    <!-- Desktop navigation. Only someone signed in has
-                         anywhere to go. -->
-                    {% if show_nav %}
-                    <div class="hidden sm:flex items-center gap-1 desktop-nav">
-                        <a href="/" class="nav-link {% if title == "Dashboard" %}active{% endif %}">Dashboard</a>
-                        <a href="/brokers" class="nav-link {% if title == "Data Brokers" %}active{% endif %}">Brokers</a>
-                        <a href="/pipeline" class="nav-link {% if title == "Pipeline" %}active{% endif %}">Pipeline</a>
-                        <a href="/history" class="nav-link {% if title == "History" %}active{% endif %}">History</a>
-                        <a href="/settings" class="nav-link {% if title == "Settings" %}active{% endif %}">Settings</a>
-                    </div>
-                    {% endif %}
-
-                    <div class="flex items-center gap-2">
-                    {% if signed_in_as %}
-                    <!-- Who you are, and the way out. -->
-                    <div class="account-menu">
-                        <button type="button" class="account-button" onclick="document.getElementById('account-panel').classList.toggle('hidden')" aria-haspopup="true">
-                            <span class="account-initial">{{ signed_in_as[0]|upper }}</span>
-                            <span class="hidden sm:inline">{{ signed_in_as }}</span>
-                        </button>
-                        <div id="account-panel" class="account-panel hidden">
-                            <a href="/settings" class="account-item">Settings</a>
-                            <a href="/accounts" class="account-item">Sending accounts</a>
-                            <a href="/people" class="account-item">People</a>
-                            <form method="POST" action="/logout">
-                                {{ csrf_field }}
-                                <button type="submit" class="account-item account-item-danger">Sign out</button>
-                            </form>
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    <!-- Theme Toggle -->
-                    <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-                        </svg>
-                    </button>
-
-                    <!-- Mobile Menu Button -->
-                    {% if show_nav %}
-                    <button class="mobile-menu sm:hidden theme-toggle" onclick="document.getElementById('mobile-nav').classList.toggle('hidden')">
-                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-                        </svg>
-                    </button>
-                    {% endif %}
-                    </div>
-                </div>
-
-                <!-- Mobile Navigation -->
-                {% if show_nav %}
-                <div id="mobile-nav" class="hidden sm:hidden mt-4 pt-4 border-t border-[var(--border)]">
-                    <div class="flex flex-col gap-2">
-                        <a href="/" class="nav-link {% if title == "Dashboard" %}active{% endif %}">Dashboard</a>
-                        <a href="/brokers" class="nav-link {% if title == "Data Brokers" %}active{% endif %}">Brokers</a>
-                        <a href="/pipeline" class="nav-link {% if title == "Pipeline" %}active{% endif %}">Pipeline</a>
-                        <a href="/history" class="nav-link {% if title == "History" %}active{% endif %}">History</a>
-                        <a href="/settings" class="nav-link {% if title == "Settings" %}active{% endif %}">Settings</a>
-                    </div>
-                </div>
-                {% endif %}
-            </div>
+    {% if show_nav %}
+    <!-- Chrome: identity, numbered tabs, who you are. -->
+    <header class="chrome">
+        <div style="display:flex;gap:28px;align-items:center;">
+            <a href="/" class="chrome-logo">eruser<span class="cursor">_</span></a>
+            <nav class="tabs">
+                <a href="/" class="tab {% if title == "Mail" %}active{% endif %}"><span class="key">1</span> mail</a>
+                <a href="/run" class="tab {% if title == "Run" %}active{% endif %}"><span class="key">2</span> run</a>
+                <a href="/captchas" class="tab {% if title == "Captchas" %}active{% endif %}"><span class="key">3</span> captchas</a>
+                <a href="/letters" class="tab {% if title == "Letters" %}active{% endif %}"><span class="key">4</span> letters</a>
+                <a href="/sending" class="tab {% if title == "Sending" %}active{% endif %}"><span class="key">5</span> sending</a>
+                <a href="/brokers" class="tab {% if title == "Data Brokers" %}active{% endif %}">brokers</a>
+                <a href="/people" class="tab {% if title == "People" %}active{% endif %}">people</a>
+            </nav>
         </div>
-    </nav>
+
+        <div class="chrome-side">
+            <a href="/run" class="tab" style="border:1px solid var(--border-strong);"><span class="key" style="color:var(--accent)">w</span> write to brokers</a>
+            {% if signed_in_as %}
+            <div class="account-menu">
+                <button type="button" class="account-button" data-menu-toggle aria-haspopup="true">{{ signed_in_as }}@localhost &#9662;</button>
+                <div class="account-panel" data-menu hidden>
+                    <a href="/sending" class="account-item"><span class="cursor">&gt;</span> sending settings</a>
+                    <a href="/letters" class="account-item"><span class="cursor">&gt;</span> letters</a>
+                    <a href="/people" class="account-item"><span class="cursor">&gt;</span> people</a>
+                    <form method="POST" action="/logout">
+                        {{ csrf_field }}
+                        <button type="submit" class="account-item account-item-danger"><span class="cursor">&gt;</span> sign out</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </header>
+    {% endif %}
 
     <!-- Main content -->
-    <main class="max-w-6xl mx-auto pt-24 pb-12 px-4">
+    <main class="app-main {% block main_class %}page{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 
-    <!-- Footer -->
-    <footer class="border-t border-[var(--border)] mt-auto">
-        <div class="max-w-6xl mx-auto py-6 px-4">
-            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div class="flex items-center gap-2">
-                    <svg class="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                    </svg>
-                    <span class="text-sm text-muted">eruser — send data broker removal requests</span>
-                </div>
-                <div class="flex items-center gap-4 text-sm text-muted">
-                    <a href="https://github.com/ezraclintoc/eruser" target="_blank" rel="noreferrer" class="hover:text-primary transition-colors">GitHub</a>
-                    <span>v{{ version }}</span>
-                </div>
-            </div>
-        </div>
-    </footer>
+    {% if show_nav %}
+    <!-- Status bar -->
+    <div class="statusbar">
+        <span><span class="mode">{{ title | upper }}</span>{% block status_left %}{% endblock %}</span>
+        <span class="mid">{% block status_mid %}{% endblock %}</span>
+        <span><span class="ok-dot">&#9679;</span> eruser v{{ version }}</span>
+    </div>
+    {% endif %}
 
-    <script>
-        // Configure HTMX to send CSRF token with all requests
-        document.addEventListener('DOMContentLoaded', function() {
-            var csrfToken = document.querySelector('meta[name="csrf-token"]');
-            if (csrfToken) {
-                document.body.addEventListener('htmx:configRequest', function(evt) {
-                    evt.detail.headers['X-CSRF-Token'] = csrfToken.content;
-                });
-            }
+</div>
 
-            // Initialize theme toggle icon
-            setTheme(getTheme());
-        });
-    </script>
+<script>
+    // Send the CSRF token with every HTMX request.
+    document.addEventListener('DOMContentLoaded', function() {
+        var csrfToken = document.querySelector('meta[name="csrf-token"]');
+        if (csrfToken) {
+            document.body.addEventListener('htmx:configRequest', function(evt) {
+                evt.detail.headers['X-CSRF-Token'] = csrfToken.content;
+            });
+        }
+    });
+</script>
 </body>
 </html>
-

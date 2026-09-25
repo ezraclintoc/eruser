@@ -189,14 +189,16 @@ fn token_from(response: Response) -> (String, String) {
 // -------------------------------------------------------------------
 
 #[tokio::test]
-async fn the_dashboard_renders_for_a_configured_install() {
+async fn the_mail_view_renders_for_a_configured_install() {
     let (app, _state, _dir) = app().await;
     let response = get(&app, "/").await;
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_of(response).await;
-    assert!(body.contains("Welcome back, Jane"));
     assert!(body.contains("<!DOCTYPE html>"));
+    // The mailboxes are the page's spine.
+    assert!(body.contains("needs-you"));
+    assert!(body.contains("Mailboxes"));
 }
 
 /// Go checked for a missing config inline in each handler, and several
@@ -205,7 +207,7 @@ async fn the_dashboard_renders_for_a_configured_install() {
 async fn an_unconfigured_install_is_sent_to_the_wizard() {
     let (app, _state, _dir) = app_with(None).await;
 
-    for path in ["/", "/pipeline", "/tasks", "/forms"] {
+    for path in ["/", "/run", "/pipeline", "/tasks", "/forms", "/sending"] {
         let response = get(&app, path).await;
         assert_eq!(
             response.status(),
@@ -226,6 +228,10 @@ async fn every_page_renders() {
 
     for path in [
         "/",
+        "/run",
+        "/captchas",
+        "/letters",
+        "/sending",
         "/brokers",
         "/history",
         "/settings",
@@ -236,6 +242,271 @@ async fn every_page_renders() {
         let response = get(&app, path).await;
         assert_eq!(response.status(), StatusCode::OK, "{path} failed to render");
     }
+}
+
+// -------------------------------------------------------------------
+// The terminal interface
+// -------------------------------------------------------------------
+
+#[tokio::test]
+async fn the_run_wizard_shows_real_counts() {
+    let (app, state, _dir) = app().await;
+    state
+        .store
+        .add_record(&NewRecord::sent(
+            "acme",
+            "Broker acme",
+            "a@b.example",
+            "gdpr",
+            "",
+        ))
+        .await
+        .unwrap();
+
+    let body = body_of(get(&app, "/run").await).await;
+
+    // Both brokers are counted; one has been written to.
+    assert!(body.contains("All 2 brokers"), "{body}");
+    assert!(body.contains("Never written to"));
+    // The auto split falls out of the region data.
+    assert!(body.contains("Best fit for each broker"));
+    assert!(body.contains("ccpa.txt"));
+}
+
+#[tokio::test]
+async fn the_mail_view_files_threads_into_folders() {
+    let (app, state, _dir) = app().await;
+
+    // A captcha task lands in needs-you.
+    state
+        .store
+        .add_task(&crate::history::NewPendingTask {
+            broker_id: "acme".into(),
+            broker_name: "Broker acme".into(),
+            task_type: crate::history::TaskType::Captcha,
+            form_url: "https://acme.example/optout".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    // A sent request lands in waiting.
+    state
+        .store
+        .add_record(&NewRecord::sent(
+            "globex",
+            "Broker globex",
+            "a@b.example",
+            "gdpr",
+            "",
+        ))
+        .await
+        .unwrap();
+
+    let body = body_of(get(&app, "/").await).await;
+    assert!(body.contains("Broker acme"), "the task should list");
+    assert!(body.contains("NEEDS_YOU"));
+
+    let body = body_of(get(&app, "/?folder=waiting").await).await;
+    assert!(
+        body.contains("Broker globex"),
+        "the sent request should list"
+    );
+    assert!(!body.contains("Broker acme"));
+}
+
+#[tokio::test]
+async fn an_unsure_reply_renders_in_the_reading_pane_and_can_be_filed() {
+    let (app, state, _dir) = app().await;
+
+    state
+        .store
+        .upsert_broker_response(&crate::history::NewBrokerResponse {
+            broker_id: "acme".into(),
+            broker_name: "Broker acme".into(),
+            response_type: crate::history::ResponseType::Unknown,
+            email_subject: "Re: your request".into(),
+            email_body: "We are not sure what you want.".into(),
+            confidence: 0.62,
+            needs_review: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let body = body_of(get(&app, "/?folder=check").await).await;
+    assert!(body.contains("best guess"), "{body}");
+    assert!(body.contains("62% sure"));
+
+    // File it: the reply is reclassified and the broker marked removed.
+    let stored = state
+        .store
+        .broker_responses(
+            crate::history::DEFAULT_USER_ID,
+            crate::history::ResponseFilter::default(),
+        )
+        .await
+        .unwrap();
+    let id = stored[0].id;
+
+    let response = post(&app, &format!("/mail/thread/{id}/confirm")).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let filed = state
+        .store
+        .broker_response(crate::history::DEFAULT_USER_ID, id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(filed.response_type, crate::history::ResponseType::Success);
+    assert!(!filed.needs_review);
+
+    let record = state
+        .store
+        .last_request_for_broker(crate::history::DEFAULT_USER_ID, "acme")
+        .await
+        .unwrap();
+    // No request was ever sent in this test, so there is nothing to move;
+    // the ruling itself is what mattered.
+    assert!(record.is_none());
+}
+
+#[tokio::test]
+async fn letters_can_be_edited_reverted_and_shipped_text_restored() {
+    let (app, state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+
+    // The editor shows the shipped text to start with.
+    let body = body_of(get(&app, "/letters").await).await;
+    assert!(body.contains("letters/generic.txt"), "{body}");
+    assert!(body.contains("To Whom It May Concern"));
+    assert!(!body.contains("[+] modified"));
+
+    // Save an edit.
+    let form = format!("subject=Changed&body=A+letter+of+my+own.&csrf_token={token}");
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/letters/generic")
+                .header(header::COOKIE, with_session(&cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(form))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let stored = state
+        .store
+        .letter_override(crate::history::DEFAULT_USER_ID, "generic")
+        .await
+        .unwrap();
+    let stored = stored.expect("the edit should be stored");
+    assert_eq!(stored.subject, "Changed");
+    assert_eq!(stored.body, "A letter of my own.");
+
+    // The page shows it as modified, with the new text in the editor.
+    let body = body_of(get(&app, "/letters").await).await;
+    assert!(body.contains("[+] modified"));
+    assert!(body.contains("A letter of my own."));
+
+    // Revert, and the shipped copy stands again.
+    let response = post(&app, "/letters/generic/revert").await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(
+        state
+            .store
+            .letter_override(crate::history::DEFAULT_USER_ID, "generic")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// A subject line cannot span lines, whatever was pasted into the form.
+#[tokio::test]
+async fn a_letter_subject_is_flattened_to_one_line() {
+    let (app, state, _dir) = app().await;
+    let (cookie, token) = csrf_pair(&app).await;
+
+    let form = format!("subject=one%0Atwo&body=body&csrf_token={token}");
+    app.clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/letters/generic")
+                .header(header::COOKIE, with_session(&cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(form))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let stored = state
+        .store
+        .letter_override(crate::history::DEFAULT_USER_ID, "generic")
+        .await
+        .unwrap()
+        .expect("the edit should be stored");
+    assert_eq!(stored.subject, "one two");
+}
+
+#[tokio::test]
+async fn the_letter_preview_renders_against_a_real_broker() {
+    let (app, _state, _dir) = app().await;
+
+    let body = body_of(get(&app, "/letters/generic/preview").await).await;
+    // The profile's name reaches the letter; the broker is the first in the
+    // test database.
+    assert!(body.contains("Jane Doe"), "{body}");
+    assert!(body.contains("Broker acme"));
+    assert!(body.contains("privacy@acme.example"));
+}
+
+#[tokio::test]
+async fn an_unknown_letter_is_a_not_found() {
+    let (app, _state, _dir) = app().await;
+    assert_eq!(
+        get(&app, "/letters/nonexistent/preview").await.status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn the_sending_page_shows_accounts_pace_and_inbox() {
+    let (app, _state, _dir) = app().await;
+
+    let body = body_of(get(&app, "/sending").await).await;
+    assert!(body.contains("Pace"), "{body}");
+    assert!(body.contains("Reading replies"));
+    assert!(body.contains("Sorting replies"));
+    // The fixture's imported account shows in the rotation.
+    assert!(body.contains("imported"), "{body}");
+    assert!(body.contains("jane@example.com"));
+}
+
+#[tokio::test]
+async fn the_captchas_page_lists_what_is_stuck() {
+    let (app, state, _dir) = app().await;
+    state
+        .store
+        .add_task(&crate::history::NewPendingTask {
+            broker_id: "acme".into(),
+            broker_name: "Broker acme".into(),
+            task_type: crate::history::TaskType::Captcha,
+            form_url: "https://acme.example/optout".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let body = body_of(get(&app, "/captchas").await).await;
+    assert!(body.contains("Broker acme"), "{body}");
+    assert!(body.contains("1 forms are stuck"));
 }
 
 #[tokio::test]
@@ -1607,7 +1878,7 @@ async fn the_signed_in_name_is_shown_with_a_way_out() {
     let body = body_of(get(&app, "/").await).await;
 
     assert!(body.contains(TEST_USER));
-    assert!(body.contains("Sign out"));
+    assert!(body.contains("sign out"));
     assert!(body.contains(r#"action="/logout""#));
 }
 

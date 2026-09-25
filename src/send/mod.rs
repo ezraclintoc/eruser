@@ -23,7 +23,8 @@ pub use pool::{Reservation, SenderPool};
 /// Knobs for one run of the pipeline.
 #[derive(Debug, Clone)]
 pub struct SendOptions {
-    /// Template name: `gdpr`, `ccpa`, or `generic`.
+    /// Template name: `gdpr`, `ccpa`, `generic` — or `auto`, which picks the
+    /// best-fit letter per broker at send time.
     pub template: String,
     /// The From address on every message.
     pub from: String,
@@ -203,7 +204,13 @@ impl SendJob {
         reservation: &Reservation,
         broker: &Broker,
     ) -> Outcome {
-        let email = match engine.render(&options.template, profile, broker) {
+        // `auto` resolves per broker, so history records the letter that
+        // actually went out rather than the word "auto".
+        let template_name = match options.template.as_str() {
+            "auto" => crate::template::best_fit(broker).to_string(),
+            other => other.to_string(),
+        };
+        let email = match engine.render(&template_name, profile, broker) {
             Ok(email) => email,
             Err(error) => {
                 return Self::record_failure(
@@ -211,6 +218,7 @@ impl SendJob {
                     options,
                     reservation,
                     broker,
+                    &template_name,
                     &error_chain(&error),
                 )
                 .await;
@@ -233,7 +241,7 @@ impl SendJob {
                     &broker.id,
                     &broker.name,
                     &broker.email,
-                    &options.template,
+                    &template_name,
                     &sent.message_id,
                 )
                 .for_user(options.user_id)
@@ -245,8 +253,15 @@ impl SendJob {
                 }
             }
             Err(error) => {
-                Self::record_failure(store, options, reservation, broker, &error_chain(&error))
-                    .await
+                Self::record_failure(
+                    store,
+                    options,
+                    reservation,
+                    broker,
+                    &template_name,
+                    &error_chain(&error),
+                )
+                .await
             }
         }
     }
@@ -256,13 +271,14 @@ impl SendJob {
         options: &SendOptions,
         reservation: &Reservation,
         broker: &Broker,
+        template_name: &str,
         error: &str,
     ) -> Outcome {
         let record = NewRecord::failed(
             &broker.id,
             &broker.name,
             &broker.email,
-            &options.template,
+            template_name,
             error,
         )
         .for_user(options.user_id)

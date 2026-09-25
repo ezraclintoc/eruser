@@ -131,7 +131,29 @@ impl Server {
 /// Every route the interface serves.
 pub fn router(state: AppState) -> Router {
     let pages = Router::new()
-        .route("/", get(handlers::pages::dashboard))
+        .route("/", get(handlers::mail::mail))
+        .route(
+            "/mail/thread/{response_id}/confirm",
+            post(handlers::mail::confirm_thread),
+        )
+        .route(
+            "/mail/thread/{response_id}/pending",
+            post(handlers::mail::pending_thread),
+        )
+        .route("/run", get(handlers::run::run))
+        .route("/captchas", get(handlers::captchas::captchas))
+        .route("/letters", get(handlers::letters::letters))
+        .route("/letters/{name}", post(handlers::letters::save_letter))
+        .route(
+            "/letters/{name}/revert",
+            post(handlers::letters::revert_letter),
+        )
+        .route(
+            "/letters/{name}/preview",
+            get(handlers::letters::preview_letter),
+        )
+        .route("/letters/{name}/test", post(handlers::letters::test_letter))
+        .route("/sending", get(handlers::sending::sending))
         .route("/brokers", get(handlers::pages::brokers))
         .route("/history", get(handlers::pages::history))
         .route("/settings", get(handlers::pages::settings))

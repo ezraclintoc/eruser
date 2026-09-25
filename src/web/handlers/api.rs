@@ -15,7 +15,7 @@ use crate::web::auth::CurrentUser;
 use crate::web::error::WebError;
 use crate::web::job::{FailureKind, JobStatus, PendingJob};
 use crate::web::state::AppState;
-use crate::web::views::{BrokerFilters, BrokerWithStatus, HistoryRow, Stats};
+use crate::web::views::{BrokerFilters, BrokerWithStatus, HistoryRow, RunFilters, Stats};
 
 /// Sends per run, unless the request asks for fewer.
 ///
@@ -148,26 +148,21 @@ pub async fn send_one(
     })
 }
 
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(default)]
-pub struct SendAllQuery {
-    #[serde(flatten)]
-    pub filters: BrokerFilters,
-    /// Cap on this run. Absent means the default daily limit.
-    pub limit: Option<usize>,
-}
-
-/// Start a background send to everything matching the current filters.
+/// Start a run: everything matching the filters, one letter each.
 ///
 /// The filters come from the form body, which is what the page posts. They
 /// used to be read from the query string instead, so whatever the visitor
 /// had filtered on the page was silently ignored by this endpoint.
+///
+/// The wizard may also pass `stale_days` (only brokers last contacted more
+/// than that long ago) and `template` (`auto` picks the best-fit letter per
+/// broker at send time).
 pub async fn send_all(
     State(state): State<AppState>,
     user: CurrentUser,
     Form(query): Form<SendAllQuery>,
 ) -> Result<Response, WebError> {
-    let filters = query.filters.normalized();
+    let filters = query.filters();
     let statuses = state.store.all_broker_statuses(user.id()).await?;
 
     let brokers: Vec<_> = state
@@ -175,7 +170,8 @@ pub async fn send_all(
         .brokers
         .iter()
         .filter(|broker| {
-            BrokerWithStatus::new((*broker).clone(), statuses.get(&broker.id)).matches(&filters)
+            let row = BrokerWithStatus::new((*broker).clone(), statuses.get(&broker.id));
+            row.matches(&filters.base) && filters.matches_staleness(statuses.get(&broker.id))
         })
         .cloned()
         .collect();
@@ -188,6 +184,30 @@ pub async fn send_all(
 
     let job = start_send(&state, &user, brokers, &filters, query.limit).await?;
     Ok(Json(job.snapshot()).into_response())
+}
+
+/// What the run-starting form sends.
+///
+/// The wizard's own fields sit beside the broker-page filters; both pages
+/// POST here.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct SendAllQuery {
+    #[serde(flatten)]
+    pub wizard: RunFilters,
+    /// Cap on this run. Absent means the default daily limit.
+    pub limit: Option<usize>,
+}
+
+impl SendAllQuery {
+    /// The filters as the run will apply them.
+    pub fn filters(&self) -> RunFilters {
+        RunFilters {
+            base: self.wizard.base.clone(),
+            stale_days: self.wizard.stale_days,
+            template: self.wizard.template.clone(),
+        }
+    }
 }
 
 /// What is left of a run that stopped before it finished.
@@ -242,11 +262,18 @@ pub async fn resume_job(
         ));
     }
 
-    let filters = crate::web::views::BrokerFilters {
-        search: pending.search.clone(),
-        category: pending.category.clone(),
-        region: pending.region.clone(),
-        status: pending.status_filter.clone(),
+    let filters = crate::web::views::RunFilters {
+        base: crate::web::views::BrokerFilters {
+            search: pending.search.clone(),
+            category: pending.category.clone(),
+            region: pending.region.clone(),
+            status: pending.status_filter.clone(),
+        },
+        // The letter choice is not persisted with the run; a resume uses
+        // the person's standing setting, which is what an ordinary run
+        // without a wizard choice would do anyway.
+        stale_days: 0,
+        template: String::new(),
     };
 
     let job = start_send(&state, &user, brokers, &filters, pending.daily_limit).await?;
@@ -266,7 +293,7 @@ async fn start_send(
     state: &AppState,
     user: &CurrentUser,
     brokers: Vec<crate::broker::Broker>,
-    filters: &crate::web::views::BrokerFilters,
+    filters: &crate::web::views::RunFilters,
     limit: Option<usize>,
 ) -> Result<crate::web::job::Job, WebError> {
     // Two concurrent runs would both count against the same daily limit and
@@ -292,10 +319,10 @@ async fn start_send(
         total: brokers.len(),
         started_at: snapshot.started_at,
         remaining_brokers: brokers.iter().map(|b| b.id.clone()).collect(),
-        search: filters.search.clone(),
-        category: filters.category.clone(),
-        region: filters.region.clone(),
-        status_filter: filters.status.clone(),
+        search: filters.base.search.clone(),
+        category: filters.base.category.clone(),
+        region: filters.base.region.clone(),
+        status_filter: filters.base.status.clone(),
         daily_limit: Some(daily_limit),
     })?;
 
@@ -322,7 +349,13 @@ async fn start_send(
     }
 
     let options = SendOptions {
-        template: config.options.template.clone(),
+        // The wizard's letter choice wins; an absent one falls back to the
+        // person's standing setting.
+        template: if filters.template.is_empty() {
+            config.options.template.clone()
+        } else {
+            filters.template.clone()
+        },
         from: config.email.from.clone(),
         rate_limit: Duration::from_millis(config.options.rate_limit_ms),
         daily_limit: Some(daily_limit),

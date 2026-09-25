@@ -67,19 +67,34 @@ mod tests {
     /// The whole point of vendoring: no page load should reach a third party.
     #[test]
     fn the_stylesheet_does_not_reference_a_remote_host() {
-        let css = StaticFiles::get("css/app.css").unwrap();
-        let text = std::str::from_utf8(&css.data).unwrap();
+        for path in ["css/app.css", "css/fonts.css"] {
+            let css = StaticFiles::get(path).unwrap();
+            let text = std::str::from_utf8(&css.data).unwrap();
 
+            assert!(
+                !text.contains("fonts.gstatic.com"),
+                "the fonts are not local"
+            );
+            assert!(
+                !text.contains("//cdn."),
+                "something is still loaded from a CDN"
+            );
+            assert!(!text.contains("googleapis"), "{path} reaches googleapis");
+        }
+
+        // The font faces live in fonts.css since the terminal theme; the
+        // main stylesheet pulls it in with a local import.
+        let app = StaticFiles::get("css/app.css").unwrap();
+        let app = std::str::from_utf8(&app.data).unwrap();
         assert!(
-            !text.contains("fonts.gstatic.com"),
-            "the fonts are not local"
+            app.contains("/static/css/fonts.css"),
+            "the stylesheet should import the font faces locally"
         );
+
+        let fonts = StaticFiles::get("css/fonts.css").unwrap();
+        let fonts = std::str::from_utf8(&fonts.data).unwrap();
         assert!(
-            !text.contains("//cdn."),
-            "something is still loaded from a CDN"
-        );
-        assert!(
-            text.contains("/static/fonts/"),
+            fonts.contains("/static/fonts/"),
             "font paths should be local"
         );
     }

@@ -1,0 +1,163 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="app-scrolly" style="flex:1;overflow:auto">
+    <div style="max-width:760px;margin:0 auto;padding:40px 32px 64px;display:flex;flex-direction:column;gap:32px">
+
+        <!-- Step indicator -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--text-faint)">
+            <span style="padding:4px 10px;color:var(--text-bright);background:var(--border)">1 details</span><span>──</span>
+            <span style="padding:4px 10px">2 recipients</span><span>──</span>
+            <span style="padding:4px 10px">3 letter</span><span>──</span>
+            <span style="padding:4px 10px">4 send</span>
+        </div>
+
+        <!-- Step 1: profile -->
+        <section style="display:flex;flex-direction:column;gap:24px">
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <h1 style="font-size:32px;font-weight:400;margin:0">Is this still you?</h1>
+                <span style="color:var(--text-muted);line-height:1.6">Brokers match on these details. An old address means they might miss a record.</span>
+            </div>
+            <div class="kv">
+                {% for field in profile_fields %}
+                <span class="k">{{ field[0] }}</span><span class="v">{{ field[1] }}</span>
+                {% endfor %}
+            </div>
+            <div style="display:flex;gap:10px">
+                <a href="#recipients" class="btn btn-primary">&#9166; yes, continue</a>
+                <a href="/sending" class="btn"><span style="color:var(--accent)">e</span> edit details</a>
+            </div>
+        </section>
+
+        <!-- Step 2: recipients -->
+        <section id="recipients" style="display:flex;flex-direction:column;gap:24px">
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <h1 style="font-size:32px;font-weight:400;margin:0">Who should we write to?</h1>
+                <span style="color:var(--text-muted)">Most people pick everyone.</span>
+            </div>
+
+            <div class="optlist">
+                <!-- The scopes post as filters; the count next to each is
+                     computed server-side from the real database. -->
+                <form method="POST" action="/api/send-all" data-run-form style="display:contents">{{ csrf_field }}
+                <input type="hidden" name="template" value="{{ template_choice }}">
+                <input type="hidden" name="stale_days" value="0">
+
+                <button type="submit" name="status" value="" class="opt">
+                    <span class="mark">(&#9679;)</span>
+                    <span><span class="title">All {{ total }} brokers</span>
+                    <span class="subtitle">US people-search sites plus the big global marketing databases.</span></span>
+                </button>
+                <button type="submit" name="status" value="pending" class="opt">
+                    <span class="mark">(&nbsp;)</span>
+                    <span><span class="title">Never written to</span>
+                    <span class="subtitle">{{ never_count }} brokers no request has reached yet.</span></span>
+                </button>
+                <button type="submit" name="region" value="us" class="opt">
+                    <span class="mark">(&nbsp;)</span>
+                    <span><span class="title">US brokers only</span>
+                    <span class="subtitle">{{ us_count }} brokers. Skips the global marketing databases.</span></span>
+                </button>
+                <button type="submit" name="stale_days" value="{{ stale_days }}" class="opt" data-stale-submit>
+                    <span class="mark">(&nbsp;)</span>
+                    <span><span class="title">Not written to in a while</span>
+                    <span class="subtitle">{{ stale_count }} brokers last contacted more than {{ stale_days }} days ago. Skips anyone already marked removed.</span></span>
+                </button>
+                </form>
+            </div>
+            <div style="color:var(--text-muted);padding-left:0">&#8594; see each button for how many brokers it means.</div>
+        </section>
+
+        <!-- Step 3: letter -->
+        <section style="display:flex;flex-direction:column;gap:24px">
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <h1 style="font-size:32px;font-weight:400;margin:0">The letter</h1>
+                <span style="color:var(--text-muted);line-height:1.6">One per broker, sent one at a time, {{ rate_seconds }}s apart, from {{ send_from }}.</span>
+            </div>
+
+            <div class="optlist">
+                {% if template_choice == "auto" %}
+                <div class="opt selected">
+                    <span class="mark">(&#9679;)</span>
+                    <span><span class="title">Best fit for each broker</span>
+                    <span class="subtitle">Picks the letter with the most legal weight where the broker is based.</span></span>
+                </div>
+                <div style="display:flex;flex-direction:column;padding-left:54px;padding-bottom:12px">
+                    {% for row in split %}
+                    <div style="display:grid;grid-template-columns:90px minmax(0,1fr) 60px;gap:8px;padding:6px 0;color:var(--text-muted)">
+                        <span style="color:var(--text-primary)">{{ row.file }}</span><span>{{ row.who }}</span>
+                        <span style="text-align:right;color:var(--text-primary)">{{ row.n }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="opt selected">
+                    <span class="mark">(&#9679;)</span>
+                    <span><span class="title">{{ template_choice }}.txt</span>
+                    <span class="subtitle">The letter every broker in this run gets. Change it on the <a href="/letters">letters page</a>.</span></span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- The four letter choices, each its own post. -->
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <form method="POST" action="/api/send-all" style="display:contents">{{ csrf_field }}
+                    <input type="hidden" name="template" value="auto">
+                    <button type="submit" class="btn btn-primary">&#9166; send best fit</button>
+                </form>
+                <form method="POST" action="/api/send-all" style="display:contents">{{ csrf_field }}
+                    <input type="hidden" name="template" value="generic">
+                    <button type="submit" class="btn">generic</button>
+                </form>
+                <form method="POST" action="/api/send-all" style="display:contents">{{ csrf_field }}
+                    <input type="hidden" name="template" value="ccpa">
+                    <button type="submit" class="btn">ccpa</button>
+                </form>
+                <form method="POST" action="/api/send-all" style="display:contents">{{ csrf_field }}
+                    <input type="hidden" name="template" value="gdpr">
+                    <button type="submit" class="btn">gdpr</button>
+                </form>
+                <a href="/letters" class="btn"><span style="color:var(--accent)">e</span> edit letters</a>
+            </div>
+            <div style="color:var(--text-muted);font-size:12px">Everything in one run goes with the letter chosen here. You can close this tab once it starts; the run keeps going.</div>
+        </section>
+
+        <!-- Step 4: the run -->
+        <section style="display:flex;flex-direction:column;gap:20px" data-run-progress>
+            <h2 style="font-size:24px;font-weight:400;margin:0">Sending</h2>
+            <div style="color:var(--text-primary);white-space:pre" data-progress-bar data-progress-text>[{{ '.' * 40 }}] waiting</div>
+            <div style="display:flex;gap:10px">
+                <a href="/" class="btn">back to mail</a>
+            </div>
+        </section>
+
+        <!-- Capacity note -->
+        <div style="color:var(--text-muted);font-size:12px;border-top:1px solid var(--border);padding-top:14px">
+            Today's accounts can still send {{ capacity }} messages. {% if capacity < total %}A run this size pauses at the daily limit and can be resumed tomorrow.{% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+    // The run page polls an active job so step 4 fills in even after the
+    // person navigates away and back.
+    (function () {
+        var pane = document.querySelector('[data-run-progress]');
+        if (!pane) return;
+
+        function refresh() {
+            fetch('/api/job/active').then(function (r) { return r.json(); }).then(function (data) {
+                if (!data.active) return;
+                var job = data.job;
+                var width = Math.round(job.progress / 100 * 40);
+                var bar = '#'.repeat(width) + '.'.repeat(40 - width);
+                document.querySelector('[data-progress-bar]').textContent =
+                    '[' + bar + '] ' + (job.sent + job.failed) + '/' + job.total;
+                if (job.status === 'running') { setTimeout(refresh, 1000); }
+            }).catch(function () {});
+        }
+        refresh();
+    })();
+</script>
+{% endblock %}
+
+{% block status_left %} · {{ total }} brokers{% endblock %}

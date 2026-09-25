@@ -1,0 +1,121 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="app-scrolly" style="flex:1;overflow:auto">
+    <div style="max-width:1000px;margin:0 auto;padding:40px 32px 64px;display:flex;flex-direction:column;gap:44px">
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="color:var(--text-muted)">{{ accounts | length }} account{% if accounts | length != 1 %}s{% endif %} in rotation</span>
+            <h1 style="font-size:32px;font-weight:400;margin:0">
+                {% if total_today > 0 %}
+                Up to {{ total_today }} more emails today.
+                {% if days_for_full_run <= 1 %}A full run fits.{% else %}A full {{ total_brokers }}-broker run takes {{ days_for_full_run }} days.{% endif %}
+                {% else %}No sending capacity left today.{% endif %}
+            </h1>
+        </div>
+
+        <!-- Send from -->
+        <div style="display:flex;flex-direction:column">
+            <div style="display:flex;justify-content:space-between;padding-bottom:8px">
+                <span style="color:var(--text-faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase">Send from · top goes first</span>
+                <a href="/brokers" style="color:var(--text-muted);font-size:13px">add on the accounts page</a>
+            </div>
+            <div style="display:grid;grid-template-columns:30px 150px 80px minmax(0,1fr) 130px 130px;gap:12px;padding:8px 0;color:var(--text-faint);font-size:12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+                <span>#</span><span>name</span><span>via</span><span>from</span><span>today</span><span></span>
+            </div>
+            {% for a in accounts %}
+            <div style="display:grid;grid-template-columns:30px 150px 80px minmax(0,1fr) 130px 130px;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-subtle);align-items:baseline;{% if a.paused %}opacity:0.45{% endif %}">
+                <span style="color:var(--text-faint)">{{ a.order }}</span>
+                <span style="color:var(--text-bright)">{{ a.label }}</span>
+                <span style="color:var(--text-muted)">{{ a.provider }}</span>
+                <span style="color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis">{{ a.from }}</span>
+                <span style="color:{% if a.paused %}var(--text-faint){% else %}var(--text-primary){% endif %}">
+                    {% if a.paused %}paused{% else %}{{ a.sent_today }}/{{ a.daily_limit }}{% endif %}
+                </span>
+                <span style="display:flex;gap:6px;justify-content:flex-end">
+                    <form method="POST" action="/accounts/{{ a.id }}/enabled/{% if a.enabled %}false{% else %}true{% endif %}" style="display:contents">{{ csrf_field }}
+                        <button type="submit" class="btn" style="font-size:12px;padding:2px 8px">{% if a.paused %}resume{% else %}pause{% endif %}</button>
+                    </form>
+                    {% if a.mine %}
+                    <form method="POST" action="/accounts/{{ a.id }}/delete" style="display:contents">{{ csrf_field }}
+                        <button type="submit" class="btn btn-danger" style="font-size:12px;padding:2px 8px">remove</button>
+                    </form>
+                    {% else %}
+                    <span style="color:var(--text-faint);font-size:12px">{{ a.owner }}</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div style="grid-column:1 / -1;color:var(--text-faint);font-size:12px;padding:0 0 8px 42px">
+                {% if a.is_smtp %}{{ a.host }}:{{ a.port }} · {% endif %}{% if a.scope == 'family' %}shared with everyone on this instance{% else %}only you send through it{% endif %}
+            </div>
+            {% endfor %}
+            {% if not has_accounts %}
+            <div style="padding:14px 0;color:var(--text-muted)">No accounts yet — run the setup wizard, or add one with <span style="color:var(--text-primary)">eruser accounts</span>.</div>
+            {% endif %}
+        </div>
+
+        <!-- Pace -->
+        <div style="display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px">
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="color:var(--text-faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase">Pace</span>
+                <span style="color:var(--text-muted);font-size:12px;line-height:1.6">Slower looks less like spam to mail providers.</span>
+            </div>
+            <span style="display:flex;gap:8px;align-items:center;color:var(--text-muted);border-top:1px solid var(--border);padding-top:14px">
+                wait <span style="color:var(--text-primary)">{{ rate_seconds }}</span> seconds between emails ·
+                rate_limit_ms = {{ rate_limit_ms }}
+                <span style="color:var(--text-faint);font-size:12px">(change it in config.yaml)</span>
+            </span>
+        </div>
+
+        <!-- Reading replies -->
+        <div style="display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px">
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="color:var(--text-faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase">Reading replies</span>
+                <span style="color:var(--text-muted);font-size:12px;line-height:1.6">Opened read-only. Nothing gets marked read or moved.</span>
+            </div>
+            <div style="display:grid;grid-template-columns:130px minmax(0,1fr);row-gap:12px;align-items:center;border-top:1px solid var(--border);padding-top:14px">
+                <span style="color:var(--text-faint)">mailbox</span>
+                <span>{% if inbox.enabled %}{{ inbox.email }}{% else %}<span style="color:var(--accent-soft)">not set up</span> — turn it on in settings{% endif %}</span>
+                <span style="color:var(--text-faint)">imap</span>
+                <span style="color:var(--text-muted)">{{ inbox.server }}:{{ inbox.port }}</span>
+                <span style="color:var(--text-faint)">folder</span>
+                <span>{{ inbox.folder }}</span>
+                <span style="color:var(--text-faint)">check</span>
+                <span style="color:var(--text-muted)">eruser monitor --watch reads it on a timer; the mail page can also scan on demand</span>
+            </div>
+        </div>
+
+        <!-- Sorting replies -->
+        <div style="display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px">
+            <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="color:var(--text-faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase">Sorting replies</span>
+                <span style="color:var(--text-muted);font-size:12px;line-height:1.6">
+                    Pattern rules come from real broker mail and always run first.
+                    A model only sees what the rules can't place, and unsure ones go to the check mailbox.
+                </span>
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:16px;display:flex;flex-direction:column;gap:4px">
+                <div class="opt {% if not sorter.ai_enabled %}selected{% endif %}">
+                    <span class="mark">{% if not sorter.ai_enabled %}(&#9679;){% else %}(&nbsp;){% endif %}</span>
+                    <span><span class="title">Rules only</span>
+                    <span class="subtitle">Offline and predictable. Anything unfamiliar goes to check.</span></span>
+                </div>
+                <div class="opt {% if sorter.ai_enabled %}selected{% endif %}">
+                    <span class="mark">{% if sorter.ai_enabled %}(&#9679;){% else %}(&nbsp;){% endif %}</span>
+                    <span><span class="title">Rules first, then a model</span>
+                    <span class="subtitle">The model reads what the rules can't place and says how sure it is. Drafts always wait for you to send them.</span></span>
+                </div>
+                {% if sorter.ai_enabled %}
+                <div style="display:grid;grid-template-columns:130px minmax(0,1fr);row-gap:10px;align-items:center;padding:14px 0 0 34px;color:var(--text-muted);font-size:12px">
+                    <span style="color:var(--text-faint)">model</span><span style="color:var(--text-primary)">{{ sorter.model }}</span>
+                    <span style="color:var(--text-faint)">endpoint</span><span>{{ sorter.endpoint }}</span>
+                    <span style="color:var(--text-faint)">per run</span><span>at most {{ sorter.max_drafts }} drafts</span>
+                    <span></span><span style="color:var(--text-faint)">change under pipeline.ai in config.yaml</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block status_left %} · {{ accounts | length }} accounts · {{ total_today }} left today{% endblock %}
