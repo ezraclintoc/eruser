@@ -1,19 +1,17 @@
-name: Nightly
+name: Extended checks
 
-# Held back until the port was finished, so it would not spend runner
-# minutes compiling a tree that changed a dozen times a day.
-#
-# What this catches that CI does not: a dependency that has published a
-# breaking change, a new Rust release that warns about something, and a
-# broker address that has quietly stopped existing.
+# The same tree CI tests, through the checks CI skips: the newest
+# dependencies semver allows, the beta compiler, and every platform the
+# release builds for. Run on push so a commit that breaks one of these is
+# visible on the commit itself, not only on a timer.
 on:
-  schedule:
-    # 04:20 UTC, well clear of the hour when everyone else's cron fires.
-    - cron: "20 4 * * *"
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: nightly
+  group: extended-checks-${{ github.ref }}
   cancel-in-progress: true
 
 env:
