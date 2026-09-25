@@ -1,10 +1,41 @@
+<div align="center">
+
+<img src="static/icon.svg" alt="eruser" width="128">
+
 # eruser
+
+**Take back your privacy. Send data removal requests to 750+ data brokers, from your own machine, for free.**
 
 A fork of [eraser](https://github.com/digisamroc/eraser), rewritten in Rust.
 
-Take back your privacy. eruser sends data removal requests to 750+ data brokers on your behalf, for free.
+</div>
+
+---
 
 There is an entire industry built on collecting your home address, your phone number, your relatives' names, and your old addresses, then selling that bundle to anyone who pays. The companies doing it are called data brokers, and there are hundreds of them. Paid services will handle the opt-out paperwork for around $100 a year. eruser does the same job, except it's open source, it runs on your own machine, and it costs nothing.
+
+## The interface
+
+eruser runs as a local web app. Everything it knows — what was sent, what came back, what still needs a human — is one keystroke away.
+
+**Mail** — every broker reply, sorted by what it means and what it needs from you.
+
+<div align="center">
+<img src="docs/screenshots/mail.png" alt="The mail view: broker replies sorted into folders, with the reading pane open" width="85%">
+</div>
+
+**Run** — start a send, watch it roll across the broker database and from mailbox to mailbox as daily limits are hit.
+
+**Letters** — read and reword the exact request each region gets, preview it rendered for a real broker, test-send it to yourself.
+
+**Sending** — the mailboxes in rotation, what each has sent, and what they have left today.
+
+**Captchas** — the forms a machine refused to finish, waiting for you.
+
+| | |
+|---|---|
+| ![The run page](docs/screenshots/run.png) | ![The letters editor](docs/screenshots/letters.png) |
+| ![The sending page](docs/screenshots/sending.png) | ![The captchas page](docs/screenshots/captchas.png) |
 
 ## What to Expect
 
@@ -18,7 +49,7 @@ There is an entire industry built on collecting your home address, your phone nu
 
 ## Status
 
-The port is complete — every part of the original has a Rust counterpart, covered by 776 tests. What it can do:
+The port is complete — every part of the original has a Rust counterpart, covered by 851 tests. On the command line:
 
 ```
 eruser init            set up your details and email
@@ -34,17 +65,9 @@ eruser users           manage who can sign in to the web interface
 eruser serve           do all of it in a browser instead
 ```
 
-Past the port, the fork has started to diverge. The web interface asks for a
-password and holds more than one person, each with their own details, history
-and mailboxes; a household shares one instance without sharing an inbox. You
-can register several sending accounts, so a run is not capped by one
-provider's daily limit — it rolls over to the next mailbox when one is spent,
-and an account can be marked as the family's if everyone should be able to
-send through it.
+Past the port, the fork has diverged. The web interface asks for a password and holds more than one person, each with their own details, history and mailboxes; a household shares one instance without sharing an inbox. You can register several sending accounts, so a run is not capped by one provider's daily limit — it rolls over to the next mailbox when one is spent, and an account can be marked as the family's if everyone should be able to send through it. The request letters themselves are editable in the browser, stored as overrides, and revert to the shipped wording whenever you want them back.
 
-Upgrading from the Go version keeps everything: the existing database is
-adopted, `config.yaml` is imported once, and the first account you create
-claims the history that is already there.
+Upgrading from the Go version keeps everything: the existing database is adopted, `config.yaml` is imported once, and the first account you create claims the history that is already there.
 
 The initial Rust port was produced by AI; from here on out, development is done by humans. Treat that as an invitation — it needs real eyes on it, and bug reports and PRs are the fastest way to make it solid.
 
@@ -60,10 +83,6 @@ The usual arguments do apply — memory safety, a single static binary, errors y
 
 ## Roadmap
 
-Longer-term goals for the project. Multi-user support is done — see Status.
-
-- **A cleaner UI** — the current interface is functional but visibly machine-generated; it deserves a real design pass
-- **Proxmox VE helper script** — install eruser as a container on Proxmox with one command
 - **Scheduled runs** — optional automatic re-send every six months, since brokers re-list you
 - **AI response pipeline** — smarter automated handling of broker replies. A start has landed: an optional local drafting model writes replies to the brokers that ask for one, every draft waits on the task list for you to read and send, and identity requests are never answered by a machine alone
 - **Automatic CAPTCHA solving** — for the opt-out forms that demand it. A start has landed: an optional solver you run yourself gets a go before a challenge is left to you, but its success is only believed when the challenge has actually left the page — anything else queues the form for a human, as before
@@ -83,7 +102,7 @@ if you are working on the port itself.
 
 ## Credits
 
-Original [eraser](https://github.com/digisamroc/eraser) by [digisamroc](https://github.com/digisamroc). The broker database and the email templates come from that project.
+Original [eraser](https://github.com/digisamroc/eraser) by [digisamroc](https://github.com/digisamroc). The broker database and the email templates come from that project. The interface uses the IBM Plex Mono and Newsreader typefaces, both open source.
 
 ## License
 

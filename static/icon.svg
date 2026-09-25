@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="eruser">
+  <!--
+    The icon, like the interface: a dark terminal tile, a prompt waiting at
+    the left, and the list of brokers beside it — one row already gone.
+  -->
+  <rect width="512" height="512" rx="96" fill="#161412"/>
+  <rect x="8" y="8" width="496" height="496" rx="88" fill="none" stroke="#2a2622" stroke-width="4"/>
+
+  <!-- the prompt -->
+  <path d="M96 160 L176 256 L96 352" fill="none" stroke="#c2410c"
+        stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- the list: three rows, the third in the act of leaving -->
+  <rect x="240" y="150" width="192" height="40" rx="20" fill="#3a352f"/>
+  <rect x="240" y="236" width="152" height="40" rx="20" fill="#3a352f"/>
+  <rect x="240" y="322" width="72" height="40" rx="20" fill="#7c3a18"/>
+</svg>
