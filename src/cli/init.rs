@@ -1,11 +1,16 @@
 //! `eruser init` — write a config file, answering a few questions.
 
 use super::{Error, Paths, prompt};
-use crate::config::{Config, SmtpConfig};
+use crate::config::{Config, SmtpConfig, Wording};
 
 /// Gmail's submission endpoint, the overwhelmingly common case.
 const GMAIL_SMTP_HOST: &str = "smtp.gmail.com";
 const GMAIL_SMTP_PORT: u16 = 465;
+
+/// What a local drafting model usually answers on, so the question has a
+/// default that is often already right.
+const LOCAL_AI_ENDPOINT: &str = "http://localhost:11434/v1";
+const LOCAL_AI_MODEL: &str = "qwen3:4b";
 
 pub fn run(paths: &Paths) -> Result<(), Error> {
     let path = paths.config_path();
@@ -131,6 +136,8 @@ pub fn run(paths: &Paths) -> Result<(), Error> {
         crate::template::DEFAULT_TEMPLATE,
     )?;
     config.options.template = template;
+
+    ask_about_replies(&mut config)?;
     config.apply_defaults();
 
     config.save(&path)?;
@@ -148,7 +155,102 @@ pub fn run(paths: &Paths) -> Result<(), Error> {
     println!("Next:");
     println!("  eruser send --dry-run   see what would go out, without sending");
     println!("  eruser send             send the requests");
+    println!("  eruser monitor          read the replies and sort them");
+    if config.pipeline.ai.enabled {
+        println!("  eruser draft-replies    write answers to the ones asking for one");
+    }
     println!("  eruser serve            do all of this in a browser instead");
+
+    Ok(())
+}
+
+/// Ask about the two optional halves of handling replies, and write what was
+/// chosen into the config.
+///
+/// Both are off unless asked for: with the defaults, eruser sends requests
+/// and sorts replies, and drafts nothing.
+fn ask_about_replies(config: &mut Config) -> Result<(), Error> {
+    println!();
+    println!("Replies from brokers");
+    println!("--------------------");
+    println!();
+    println!("Some brokers reply asking for something before they act — a detail they");
+    println!("could not match, a confirmation, proof of who you are. eruser can draft");
+    println!("those replies for you. You read every one before it goes anywhere.");
+    println!();
+    println!("  1. Use the replies eruser ships, with your details filled in");
+    println!("     Nothing is generated, and nothing extra has to be running.");
+    println!("  2. Have a model you run write them from scratch");
+    println!("  3. Neither — leave the replies to me                     [3]");
+    println!();
+
+    match prompt::line_or("Which? [3]: ", "3")?.trim() {
+        "1" | "canned" => {
+            config.pipeline.ai.enabled = true;
+            config.pipeline.ai.wording = Wording::Canned;
+        }
+        "2" | "generated" => {
+            config.pipeline.ai.enabled = true;
+            config.pipeline.ai.wording = Wording::Generated;
+
+            println!();
+            println!("Any OpenAI-compatible endpoint will do — Ollama, llama.cpp server,");
+            println!("LM Studio, vLLM.");
+            println!();
+            config.pipeline.ai.endpoint = prompt::line_or(
+                &format!("Endpoint [{LOCAL_AI_ENDPOINT}]: "),
+                LOCAL_AI_ENDPOINT,
+            )?;
+            config.pipeline.ai.model =
+                prompt::line_or(&format!("Model [{LOCAL_AI_MODEL}]: "), LOCAL_AI_MODEL)?;
+        }
+        _ => {}
+    }
+
+    println!();
+    println!("Decisions (optional)");
+    println!("--------------------");
+    println!();
+    println!("Much of the work is choosing rather than writing: which reply a broker's");
+    println!("email deserves, which of the shipped replies fits what they asked for. A");
+    println!("System One model answers that as a choice from a list eruser gives it, so");
+    println!("it writes nothing and cannot return anything eruser did not offer.");
+    println!();
+    println!("Jev, from TypeSafe, is one of those — it runs on their machines and needs");
+    println!("a key. To keep it on yours, serve anything answering the same request and");
+    println!("give its address here. eruser installs no models and ships none.");
+    println!();
+    println!("  1. No — the built-in rules are enough                    [1]");
+    println!("  2. Yes — I have an endpoint to point it at");
+    println!();
+
+    let answer = prompt::line_or("Which? [1]: ", "1")?;
+    if !matches!(answer.trim().to_lowercase().as_str(), "2" | "y" | "yes") {
+        return Ok(());
+    }
+
+    config.pipeline.decider.enabled = true;
+    println!();
+    config.pipeline.decider.endpoint = prompt::line_or(
+        &format!("Endpoint [{}]: ", crate::decision::DEFAULT_ENDPOINT),
+        crate::decision::DEFAULT_ENDPOINT,
+    )?;
+    config.pipeline.decider.model = prompt::line_or(
+        &format!("Model [{}]: ", crate::decision::DEFAULT_MODEL),
+        crate::decision::DEFAULT_MODEL,
+    )?;
+    config.pipeline.decider.api_key =
+        prompt::secret("API key (blank if your endpoint needs none): ")?;
+
+    println!();
+    let route = prompt::line_or("Let it choose which reply an email deserves? [y/N]: ", "n")?;
+    config.pipeline.decider.route = matches!(route.trim().to_lowercase().as_str(), "y" | "yes");
+    let classify = prompt::line_or(
+        "Let it file the replies the patterns could not place? [y/N]: ",
+        "n",
+    )?;
+    config.pipeline.decider.classify =
+        matches!(classify.trim().to_lowercase().as_str(), "y" | "yes");
 
     Ok(())
 }

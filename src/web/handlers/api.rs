@@ -607,7 +607,40 @@ pub async fn inbox_reclassify(
         .await
         .map_err(WebError::Inbox)?;
 
-    Ok(Json(json!({ "reclassified": changed })).into_response())
+    // The second half, the same as the CLI's: the replies the patterns still
+    // could not place, when this machine has a decision model configured to
+    // file them.
+    let filed = classify_unplaced(&state, user.id()).await?;
+
+    Ok(Json(json!({ "reclassified": changed, "filed": filed })).into_response())
+}
+
+/// File the replies the patterns could not place, when a decision model is
+/// configured to. Returns how many moved.
+///
+/// Silent and free when it is not switched on: no model is built, and the
+/// pass does not run at all.
+async fn classify_unplaced(state: &AppState, user_id: i64) -> Result<usize, WebError> {
+    let pipeline = state.pipeline();
+    if !pipeline.decider.enabled || !pipeline.decider.classify {
+        return Ok(0);
+    }
+
+    let Some(decider) = crate::decision::from_config(&pipeline.decider) else {
+        return Ok(0);
+    };
+
+    let summary = crate::inbox::scan::classify_unknown(
+        &state.store,
+        decider.as_ref(),
+        pipeline.decider.min_confidence,
+        user_id,
+        crate::inbox::scan::DEFAULT_CLASSIFY_MAX,
+    )
+    .await
+    .map_err(WebError::Inbox)?;
+
+    Ok(summary.filed)
 }
 
 /// Forget every stored reply, then read the mailbox again from scratch.

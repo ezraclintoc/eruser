@@ -4,11 +4,12 @@ Running log of the Go → Rust port. Ordered newest first. Every entry
 corresponds to a commit on `main`.
 
 **Status: the port is complete, and the fork has started diverging.** Every
-module in upstream eraser has a Rust counterpart. 842 tests passing.
+module in upstream eraser has a Rust counterpart. 924 tests passing.
 
 Work since the port: several people on one instance, each with their own
-sign-in, settings and mailboxes, and several sending accounts per person so a
-run is not capped by one provider's daily limit.
+sign-in, settings and mailboxes, several sending accounts per person so a run
+is not capped by one provider's daily limit, and a reply pipeline whose
+wording is picked by a schema-constrained model rather than written by one.
 
 | Module | Upstream source | Go LOC | Rust tests |
 |---|---|---|---|
@@ -92,6 +93,90 @@ Each of these has a test pinning it, so it cannot come back.
 ---
 
 ## Changelog
+
+### `automation` — solvers by kind, with fallback
+
+One sidecar was never going to be enough. A picture grid needs a vision model
+and an invisible challenge needs a token service, and the person setting this
+up may want one of each — or the same service twice with different settings.
+`captcha_solver.solvers` is now a list, each entry naming the `kind` it is
+asked about (an entry that names none is asked about everything), tried in the
+order written.
+
+The rule the module was built around does not bend because there are more
+solvers: a solver is an optimisation, never a gate. The first entry that
+reports a solve ends the attempt, and a failure does not — a solver that could
+not clear the challenge, or that is not running at all, hands over to the next
+one. What comes back when nobody manages it prefers a real failure to an
+unreachable sidecar, because "the widget did not move" is worth reading and
+"connection refused" is not. The page is re-read afterwards either way, so a
+solver's claim is still never the evidence.
+
+The old single `url`/`token` still works: it is the shorthand for one solver
+asked about every kind. A config with both is a mistake worth saying out loud,
+and the list wins — it is the one that can express more.
+
+### `decision` and `reply` — the reply library, and a model that only chooses
+
+The AI response pipeline's next instalment, and a change of mind about how it
+should work. Generating a paragraph and then checking it for promises is a lot
+of machinery to arrive at "please go ahead with the deletion". The wording
+brokers need is short, repetitive, and known in advance, so it now ships
+written: seven replies under `templates/replies/`, beside the request letters,
+with the person's own details filled in.
+
+What is left is *choosing*, and that is a `choice` question — which is what a
+System One model answers. `decision` speaks Jev's own API
+(`POST /v1/systemone`); the endpoint may be a host, a base URL, or the full
+path, and the path is completed for you. Nothing in the module is on by
+default.
+
+This is the part worth dwelling on. The answer to a closed question is one of
+the labels eruser wrote, so there is no prose to parse back into a category, no
+category that was never on the list, and nothing a broker's email can talk the
+model into: an instruction hidden in a quoted reply has nowhere to land. A
+model that answers with a label nobody offered has produced an unusable answer,
+which is treated as no answer at all.
+
+Three things use it, each switched on separately and each falling back to what
+the tool did before:
+
+- **Routing** (`decider.route`) — which reply an email deserves. The rule table
+  stays the default: an unfinished reply gets the missing-information reply.
+  What the table cannot read is the other two, and deliberately so — the
+  patterns cannot tell "click this link to confirm" from "reply to this email
+  to confirm", and the first of those is `confirm`'s job, not a reply's. Those
+  are exactly the readings a person supplies.
+- **Filing** (`decider.classify`) — the replies the patterns could not place.
+  Runs as part of `monitor`, after `monitor --reclassify`, and from the web's
+  Reclassify button, which now reports what it filed as well as what it
+  changed. It offers only
+  the verdicts that need no URL to act on: `form_required` and
+  `confirmation_required` come from the page rather than the email, so filing
+  one without its URL would put a task on the list that cannot be carried out.
+  A reply the model cannot place stays exactly where it was.
+- **Wording** (`ai.wording`) — `canned`, the shipped reply that fits best, or
+  `generated`, a model writing one as before. `canned` needs no model anywhere;
+  `generated` keeps the validator it always had.
+
+Every answer below `decider.min_confidence` is thrown away and the rule table
+stands, so a model that is barely better than guessing never acts on anyone's
+behalf. `eruser init` now asks about both halves and writes what was chosen,
+offering Jev's endpoint while saying plainly that eruser installs no models and
+ships none.
+
+The state a model is shown is built by `decision::state_of`, quoted as data and
+cut at 4000 characters with a marker — a broker's reply is a short answer on
+top of a quoted thread.
+
+The request shape is the API's own, checked field by field against the
+published reference and pinned by a test that runs the real client against a
+socket: the path, the bearer key, and a `choice` question whose `criteria` are
+the labels it may answer with. Rate limits are the one thing the reference asks
+for that is easy to forget, so `429` and `529` are retried twice with a growing
+delay before the answer is given up on — a decision that arrives late is worth
+more than one that does not, but not at the price of holding a scan open. Every
+other status is reported once and the rules decide.
 
 ### `web` — the terminal interface
 

@@ -335,6 +335,224 @@ async fn reclassifying_an_empty_store_does_nothing() {
 }
 
 // -------------------------------------------------------------------
+// Filing what the patterns could not place
+// -------------------------------------------------------------------
+async fn store_unplaced_reply(store: &Store, broker_id: &str, subject: &str, body: &str) {
+    store
+        .upsert_broker_response(&crate::history::NewBrokerResponse {
+            broker_id: broker_id.into(),
+            broker_name: format!("Broker {broker_id}"),
+            response_type: StoredType::Unknown,
+            email_subject: subject.into(),
+            email_body: body.into(),
+            needs_review: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+}
+
+/// A decider that answers from a script.
+struct Scripted {
+    answer: &'static str,
+    confidence: f32,
+}
+
+#[async_trait::async_trait]
+impl Decider for Scripted {
+    async fn choose(
+        &self,
+        _state: &str,
+        _question: &Choice,
+    ) -> Result<crate::decision::Decision, crate::decision::Error> {
+        Ok(crate::decision::Decision {
+            choice: self.answer.to_string(),
+            confidence: self.confidence,
+            probabilities: Default::default(),
+            model: "stub-1".to_string(),
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "stub"
+    }
+}
+
+/// A decider that is always down.
+struct Unreachable;
+
+#[async_trait::async_trait]
+impl Decider for Unreachable {
+    async fn choose(
+        &self,
+        _state: &str,
+        _question: &Choice,
+    ) -> Result<crate::decision::Decision, crate::decision::Error> {
+        Err(crate::decision::Error::Unreachable(
+            "connection refused".into(),
+        ))
+    }
+
+    fn name(&self) -> &'static str {
+        "stub"
+    }
+}
+
+#[tokio::test]
+async fn a_reply_the_rules_could_not_place_is_filed_by_the_model() {
+    let store = store_with_request("acme").await;
+    store_unplaced_reply(
+        &store,
+        "acme",
+        "Re: request",
+        "We are looking into your request and will be in touch.",
+    )
+    .await;
+
+    let decider = Scripted {
+        answer: "pending",
+        confidence: 0.83,
+    };
+    let summary = classify_unknown(&store, &decider, 0.6, DEFAULT_USER_ID, 50)
+        .await
+        .unwrap();
+
+    assert_eq!(summary.considered, 1);
+    assert_eq!(summary.filed, 1);
+    assert_eq!(summary.unsure, 0);
+
+    let stored = store
+        .find_response_by_subject(DEFAULT_USER_ID, "acme", "Re: request")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.response_type, StoredType::Pending);
+    assert!(!stored.needs_review, "it has been placed");
+    assert!((stored.confidence - 0.83).abs() < 0.001);
+}
+
+#[tokio::test]
+async fn filing_also_moves_the_brokers_stage() {
+    let store = store_with_request("acme").await;
+    store_unplaced_reply(&store, "acme", "Re: request", "Your data has been deleted.").await;
+
+    let decider = Scripted {
+        answer: "success",
+        confidence: 0.9,
+    };
+    classify_unknown(&store, &decider, 0.6, DEFAULT_USER_ID, 50)
+        .await
+        .unwrap();
+
+    let record = store
+        .last_request_for_broker(DEFAULT_USER_ID, "acme")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.pipeline_status, PipelineStatus::Confirmed);
+}
+
+/// A reply a person has already dealt with is not re-opened, and one the
+/// rules already placed is not second-guessed.
+#[tokio::test]
+async fn only_the_unplaced_replies_are_considered() {
+    let store = store_with_request("acme").await;
+    store_unplaced_reply(&store, "acme", "Re: unplaced", "Hmm.").await;
+
+    store
+        .upsert_broker_response(&crate::history::NewBrokerResponse {
+            broker_id: "globex".into(),
+            broker_name: "Broker globex".into(),
+            response_type: StoredType::Success,
+            email_subject: "Re: placed".into(),
+            email_body: "We have removed your data.".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let decider = Scripted {
+        answer: "pending",
+        confidence: 0.9,
+    };
+    let summary = classify_unknown(&store, &decider, 0.6, DEFAULT_USER_ID, 50)
+        .await
+        .unwrap();
+
+    assert_eq!(summary.considered, 1, "only the unplaced one");
+    assert_eq!(summary.filed, 1);
+
+    let placed = store
+        .find_response_by_subject(DEFAULT_USER_ID, "globex", "Re: placed")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(placed.response_type, StoredType::Success);
+}
+
+#[tokio::test]
+async fn a_hesitant_answer_leaves_the_reply_for_a_person() {
+    let store = store_with_request("acme").await;
+    store_unplaced_reply(&store, "acme", "Re: request", "Whatever.").await;
+
+    let decider = Scripted {
+        answer: "pending",
+        confidence: 0.2,
+    };
+    let summary = classify_unknown(&store, &decider, 0.6, DEFAULT_USER_ID, 50)
+        .await
+        .unwrap();
+
+    assert_eq!(summary.considered, 1);
+    assert_eq!(summary.filed, 0);
+    assert_eq!(summary.unsure, 1);
+
+    let stored = store
+        .find_response_by_subject(DEFAULT_USER_ID, "acme", "Re: request")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.response_type, StoredType::Unknown);
+    assert!(stored.needs_review, "still waiting for a person");
+}
+
+#[tokio::test]
+async fn an_unreachable_model_leaves_every_reply_where_it_was() {
+    let store = store_with_request("acme").await;
+    store_unplaced_reply(&store, "acme", "Re: request", "Whatever.").await;
+
+    let summary = classify_unknown(&store, &Unreachable, 0.6, DEFAULT_USER_ID, 50)
+        .await
+        .unwrap();
+
+    assert_eq!(summary.considered, 1);
+    assert_eq!(summary.filed, 0);
+    assert_eq!(summary.unsure, 1);
+}
+
+/// The verdicts that need a URL to act on are not offered, because the URL
+/// comes from the page rather than the email.
+#[test]
+fn the_question_does_not_offer_verdicts_that_need_a_form() {
+    let question = classification_question();
+    assert!(question.offers("success"));
+    assert!(question.offers("rejected"));
+    assert!(question.offers("pending"));
+    assert!(!question.offers("form_required"));
+    assert!(!question.offers("confirmation_required"));
+    assert!(!question.offers("unknown"));
+}
+
+#[test]
+fn only_the_three_verdicts_parse() {
+    assert_eq!(verdict_for("success"), Some(ResponseType::Success));
+    assert_eq!(verdict_for("rejected"), Some(ResponseType::Rejected));
+    assert_eq!(verdict_for("pending"), Some(ResponseType::Pending));
+    assert_eq!(verdict_for("form_required"), None);
+    assert_eq!(verdict_for("whatever"), None);
+}
+
+// -------------------------------------------------------------------
 // Options and naming
 // -------------------------------------------------------------------
 

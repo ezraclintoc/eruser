@@ -52,6 +52,38 @@ pub struct EmailData {
 }
 
 impl EmailData {
+    /// The same facts, for a broker eruser only knows by name.
+    ///
+    /// A reply is written to a broker that was already written to, and
+    /// history keeps the name rather than the database row, so this is what
+    /// a reply has to work with.
+    pub fn for_reply(profile: &Profile, broker_name: &str) -> Self {
+        let now = Local::now();
+        Self {
+            first_name: profile.first_name.clone(),
+            last_name: profile.last_name.clone(),
+            full_name: profile.full_name(),
+            email: profile.email.clone(),
+            address: profile.address.clone(),
+            city: profile.city.clone(),
+            state: profile.state.clone(),
+            zip_code: profile.zip_code.clone(),
+            country: profile.country.clone(),
+            phone: profile.phone.clone(),
+            date_of_birth: profile.date_of_birth.clone(),
+
+            broker_name: broker_name.to_string(),
+            broker_email: String::new(),
+            broker_website: String::new(),
+            broker_opt_out: String::new(),
+
+            date: now.format("%B %-d, %Y").to_string(),
+            year: now.year(),
+            month: now.format("%B").to_string(),
+            template: String::new(),
+        }
+    }
+
     fn new(profile: &Profile, broker: &Broker, template: &str) -> Self {
         let now = Local::now();
         Self {
@@ -186,6 +218,38 @@ impl Engine {
         Ok(Email {
             subject: subject.to_string(),
             body: rendered,
+        })
+    }
+
+    /// Render a reply candidate against the person's own details.
+    ///
+    /// The same data a request letter gets, so a reply can quote a name and
+    /// an address exactly as the request did — and the same strict-undefined
+    /// rule, so a candidate with a typo in it fails here rather than being
+    /// sent with a hole in it.
+    pub fn render_reply(
+        &self,
+        name: &str,
+        body: &str,
+        profile: &Profile,
+        broker_name: &str,
+    ) -> Result<String, Error> {
+        let key = format!("__reply_{name}");
+        let mut env = self.env.clone();
+        env.add_template(&key, body)
+            .map_err(|source| Error::Parse {
+                template: key.clone(),
+                source,
+            })?;
+
+        let template = env
+            .get_template(&key)
+            .map_err(|_| Error::Unknown(key.clone()))?;
+        let data = EmailData::for_reply(profile, broker_name);
+
+        template.render(&data).map_err(|source| Error::Render {
+            template: name.to_string(),
+            source,
         })
     }
 

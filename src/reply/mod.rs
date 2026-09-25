@@ -13,8 +13,10 @@
 //! produced nothing, and the task notes say why.
 
 pub mod auto_send;
+pub mod choices;
 mod error;
 pub mod pipeline;
+pub mod routing;
 
 pub use error::Error;
 

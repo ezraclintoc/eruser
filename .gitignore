@@ -10,3 +10,6 @@ config.yaml
 *.db-wal
 /screenshots
 .env
+
+# Design sources — reference only, not shipped
+/Eruser UI mockups.zip

@@ -72,6 +72,83 @@ fn a_captcha_solver_section_parses_with_defaults() {
 }
 
 #[test]
+fn a_list_of_solvers_parses_in_order() {
+    let cfg: Config = serde_norway::from_str(
+        "pipeline:\n  captcha_solver:\n    enabled: true\n    solvers:\n      - kind: hcaptcha\n        url: http://localhost:9100/solve\n      - url: http://localhost:9101/solve\n",
+    )
+    .unwrap();
+
+    let solvers = &cfg.pipeline.captcha_solver.solvers;
+    assert_eq!(solvers.len(), 2);
+    assert_eq!(solvers[0].kind, "hcaptcha");
+    assert_eq!(solvers[0].url, "http://localhost:9100/solve");
+    // An entry that names no kind is asked about everything.
+    assert!(solvers[1].kind.is_empty());
+    assert_eq!(solvers[1].url, "http://localhost:9101/solve");
+}
+
+/// The whole reply pipeline is off until asked for, on the same reasoning as
+/// the solver: with the defaults, nothing about this exists.
+#[test]
+fn the_reply_pipeline_and_its_decider_are_off_unless_asked_for() {
+    let cfg: Config = serde_norway::from_str("profile:\n  first_name: Jane\n").unwrap();
+
+    assert!(!cfg.pipeline.ai.enabled);
+    assert!(cfg.pipeline.ai.endpoint.is_empty());
+    assert_eq!(cfg.pipeline.ai.wording, Wording::Generated);
+
+    assert!(!cfg.pipeline.decider.enabled);
+    assert!(cfg.pipeline.decider.endpoint.is_empty());
+    assert!(!cfg.pipeline.decider.route);
+    assert!(!cfg.pipeline.decider.classify);
+}
+
+/// Who writes a reply is a choice, and the default is what the tool always
+/// did: a model.
+#[test]
+fn the_wording_can_be_the_shipped_replies() {
+    let cfg: Config = serde_norway::from_str("pipeline:\n  ai:\n    wording: canned\n").unwrap();
+    assert_eq!(cfg.pipeline.ai.wording, Wording::Canned);
+
+    let written: Config =
+        serde_norway::from_str("pipeline:\n  ai:\n    wording: generated\n").unwrap();
+    assert_eq!(written.pipeline.ai.wording, Wording::Generated);
+}
+
+#[test]
+fn a_decider_section_parses_with_defaults() {
+    let cfg: Config = serde_norway::from_str(
+        "pipeline:\n  decider:\n    enabled: true\n    endpoint: http://localhost:8000\n    model: jev-latest\n    route: true\n",
+    )
+    .unwrap();
+
+    let decider = &cfg.pipeline.decider;
+    assert!(decider.enabled);
+    assert!(decider.route);
+    assert!(
+        !decider.classify,
+        "filing replies is a separate thing to ask for"
+    );
+    assert_eq!(decider.timeout_sec, DEFAULT_DECIDER_TIMEOUT_SECS);
+    assert_eq!(
+        decider.min_confidence,
+        crate::decision::DEFAULT_MIN_CONFIDENCE
+    );
+    assert!(decider.api_key.is_empty());
+}
+
+/// The confidence floor is a setting, because a local model is not the same
+/// proposition as a hosted one.
+#[test]
+fn the_confidence_floor_can_be_raised() {
+    let cfg: Config = serde_norway::from_str(
+        "pipeline:\n  decider:\n    enabled: true\n    min_confidence: 0.9\n",
+    )
+    .unwrap();
+    assert_eq!(cfg.pipeline.decider.min_confidence, 0.9);
+}
+
+#[test]
 fn gmail_provider_implies_imap_server_and_port() {
     let mut cfg: Config =
         serde_norway::from_str("inbox:\n  enabled: true\n  provider: gmail\n").unwrap();

@@ -1,0 +1,12 @@
+Hello {{ broker_name }},
+
+Thank you for your reply about my data removal request.
+
+Your message says the request is missing information, but it does not say what is missing. I would rather give you the one detail you need than a longer list of everything about me.
+
+Please tell me exactly which piece of information is required, and why the request cannot be processed without it. If what you need is simply confirmation that the request is mine, say so and I will confirm it.
+
+The request itself is unchanged: please delete the personal information you hold about me and stop selling or sharing it.
+
+Regards,
+{{ full_name }}

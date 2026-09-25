@@ -7,6 +7,7 @@
 
 use super::classifier::{ClassifiedResponse, ResponseType, Summary};
 use super::{Email, Monitor, classifier, monitor};
+use crate::decision::{Choice, Decider};
 use crate::history::{DEFAULT_USER_ID, NewBrokerResponse, PipelineStatus, Store};
 
 /// How far back to look when nothing else is asked for.
@@ -278,6 +279,145 @@ pub async fn reclassify_stored(store: &Store, user_id: i64) -> Result<usize, Err
     }
 
     Ok(changed)
+}
+
+/// How many unplaced replies one pass will ask about. The same reasoning as
+/// the drafting cap: a first run against a mailbox full of history should not
+/// turn into hundreds of prompts at once.
+pub const DEFAULT_CLASSIFY_MAX: u32 = 50;
+
+/// How a classification pass went.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClassifySummary {
+    /// Replies the rules had left unplaced, before any cap.
+    pub considered: usize,
+    /// Replies the model filed.
+    pub filed: usize,
+    /// Replies the model could not place either.
+    pub unsure: usize,
+}
+
+/// The verdicts a decision model may choose from.
+///
+/// The two *actionable* verdicts are deliberately absent. Filing a reply as
+/// "there is a form to fill in" without the form's URL would put a task on
+/// the list that cannot be carried out, and the URL comes from the page, not
+/// from the email. A person reads those anyway. This pass exists to empty
+/// the "could not tell" folder, not to invent work.
+pub fn classification_question() -> Choice {
+    Choice::new(
+        "A data broker replied to a personal data removal request. The pattern \
+         rules could not tell what the reply says. Which of these is it?",
+        [
+            Choice::option("success", "the removal has been carried out"),
+            Choice::option(
+                "rejected",
+                "the broker refused, or says it holds nothing about this person",
+            ),
+            Choice::option("pending", "acknowledged and still being worked on"),
+        ],
+    )
+}
+
+/// Map an answer label onto the verdict it names.
+pub fn verdict_for(label: &str) -> Option<ResponseType> {
+    match label {
+        "success" => Some(ResponseType::Success),
+        "rejected" => Some(ResponseType::Rejected),
+        "pending" => Some(ResponseType::Pending),
+        _ => None,
+    }
+}
+
+/// File the replies the patterns could not place.
+///
+/// The body of each reply is already stored, so this needs no mailbox and no
+/// scan — which is also why it can be run again after a model changes.
+///
+/// Every failure is a log line, not an error: a reply the model cannot place
+/// stays exactly where it was, in the "could not tell" folder, waiting for a
+/// person. A human's ruling and this pass leave the same marks, so the mail
+/// view cannot tell them apart afterwards — which is the point.
+pub async fn classify_unknown(
+    store: &Store,
+    decider: &dyn Decider,
+    min_confidence: f32,
+    user_id: i64,
+    max: u32,
+) -> Result<ClassifySummary, Error> {
+    let stored = store
+        .broker_responses(user_id, crate::history::ResponseFilter::default())
+        .await?;
+    let mut summary = ClassifySummary::default();
+
+    for response in stored {
+        if summary.filed >= max as usize {
+            break;
+        }
+        if response.response_type != crate::history::ResponseType::Unknown {
+            continue;
+        }
+
+        summary.considered += 1;
+
+        let state = crate::decision::state_of(
+            &response.broker_name,
+            &response.email_subject,
+            &response.email_body,
+        );
+
+        let decision = match decider.choose(&state, &classification_question()).await {
+            Ok(decision) => decision,
+            Err(problem) => {
+                tracing::warn!(
+                    broker = %response.broker_id,
+                    %problem,
+                    "could not ask what a reply says"
+                );
+                summary.unsure += 1;
+                continue;
+            }
+        };
+
+        let Some(decision) = decision.accepted_at(min_confidence) else {
+            tracing::info!(
+                broker = %response.broker_id,
+                answer = %decision.describe(),
+                "the answer was below the confidence floor; leaving the reply for a person"
+            );
+            summary.unsure += 1;
+            continue;
+        };
+
+        let Some(verdict) = verdict_for(&decision.choice) else {
+            summary.unsure += 1;
+            continue;
+        };
+
+        tracing::info!(
+            broker = %response.broker_id,
+            answer = %decision.describe(),
+            "the decision model placed a reply the rules could not"
+        );
+
+        store
+            .update_response_classification(
+                response.id,
+                verdict.into(),
+                &response.form_url,
+                &response.confirm_url,
+                decision.confidence as f64,
+                false,
+            )
+            .await?;
+        store
+            .update_pipeline_status(user_id, &response.broker_id, stage_for(verdict))
+            .await?;
+
+        summary.filed += 1;
+    }
+
+    Ok(summary)
 }
 
 /// The best name available for the sender.

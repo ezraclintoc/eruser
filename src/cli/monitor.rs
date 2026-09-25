@@ -62,9 +62,12 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
 
     if args.reclassify {
         let changed = scan::reclassify_stored(&store, crate::history::DEFAULT_USER_ID).await?;
-        store.close().await;
-
         println!("{}", format_reclassify(changed));
+
+        // Re-filing is exactly what this pass does too, for the replies the
+        // patterns have nothing to say about.
+        classify_unplaced(paths, &store).await?;
+        store.close().await;
         return Ok(());
     }
 
@@ -102,8 +105,9 @@ pub async fn run(paths: &Paths, args: Args) -> Result<(), Error> {
         .map(|_| ())
     };
 
-    store.close().await;
     result?;
+    classify_unplaced(paths, &store).await?;
+    store.close().await;
 
     if args.draft {
         crate::cli::draft_replies::run_standalone(paths, true).await?;
@@ -264,6 +268,65 @@ fn format_summary(summary: &ScanSummary) -> String {
             "{} are waiting on you. `eruser serve` shows what each one needs.",
             counts.form_required + counts.confirmation_required
         );
+    }
+
+    out
+}
+
+/// File the replies the patterns could not place, when a decision model is
+/// configured to do it.
+///
+/// Silent when it is not asked for, and silent when it is asked for and
+/// nothing was unplaced: this runs as part of a scan, and a scan should not
+/// narrate work it was not given.
+async fn classify_unplaced(paths: &Paths, store: &Store) -> Result<(), Error> {
+    let pipeline = paths.pipeline_settings();
+    if !pipeline.decider.enabled || !pipeline.decider.classify {
+        return Ok(());
+    }
+
+    let Some(decider) = crate::decision::from_config(&pipeline.decider) else {
+        return Ok(());
+    };
+
+    let summary = scan::classify_unknown(
+        store,
+        decider.as_ref(),
+        pipeline.decider.min_confidence,
+        crate::history::DEFAULT_USER_ID,
+        scan::DEFAULT_CLASSIFY_MAX,
+    )
+    .await?;
+
+    print!("{}", format_classify(&summary));
+    Ok(())
+}
+
+/// Render the classification pass's outcome. Pure, so the wording is
+/// testable. Nothing to say when nothing was unplaced.
+fn format_classify(summary: &scan::ClassifySummary) -> String {
+    if summary.considered == 0 {
+        return String::new();
+    }
+
+    let replies = |count: usize| {
+        if count == 1 { "reply" } else { "replies" }
+    };
+
+    let mut out = String::new();
+    if summary.filed > 0 {
+        let filed = summary.filed;
+        out.push_str(&format!(
+            "Filed {filed} {} the patterns could not place.\n",
+            replies(filed)
+        ));
+    }
+    if summary.unsure > 0 {
+        let unsure = summary.unsure;
+        out.push_str(&format!(
+            "{unsure} {} still need you to say what they are.\n",
+            replies(unsure)
+        ));
     }
 
     out

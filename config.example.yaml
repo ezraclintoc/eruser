@@ -79,16 +79,50 @@ pipeline:
     # url: http://localhost:9100/solve
     # token: shared-secret    # optional, sent as a bearer token
     # timeout_sec: 30
+    #
+    # `url` above is the shorthand for one solver that is asked about every
+    # kind of challenge. When different kinds need different sidecars — a
+    # vision model for the picture grids, a token service for the invisible
+    # ones — list them instead, in the order they should be tried. Each entry
+    # may name a `kind` (hcaptcha, recaptcha_v2, cloudflare_turnstile, …),
+    # and one that names none is asked about everything.
+    #
+    # Entries do not have to succeed alone: a solver that reports a failure,
+    # or that cannot be reached, hands over to the next one. `url` and the
+    # list are alternatives, not both — if you set both, the list is used.
+    # solvers:
+    #   - kind: hcaptcha
+    #     url: http://localhost:9100/solve
+    #     token: shared-secret
+    #   - kind: image_captcha
+    #     url: http://localhost:9101/solve
+    #   - url: http://localhost:9102/solve   # asked about anything left over
 
-  # Optional: a drafting model you run yourself, writing replies to the
-  # brokers that ask for one. Speaks the OpenAI-compatible chat API, so
-  # Ollama, llama.cpp server, LM Studio, and vLLM all work as endpoints.
-  # Every draft lands on the task list for you to read and send — nothing
-  # is sent by itself unless its reply type is listed under auto_send.
-  # Identity-verification requests are never auto-sent, whatever the list
+  # Optional: replies to the brokers that ask for one. This is the master
+  # switch — with it off, nothing is drafted and nothing is sent. Every
+  # draft lands on the task list for you to read and send; nothing goes out
+  # by itself unless its reply type is listed under auto_send, and
+  # identity-verification requests are never auto-sent whatever the list
   # says.
   ai:
     enabled: false
+
+    # Who writes the reply.
+    #
+    #   canned    — the reply eruser ships that fits best is used, with your
+    #               own details filled in. Nothing is generated, so no model
+    #               is needed anywhere. (The `decider:` section below can
+    #               pick which one fits, if you have one.)
+    #   generated — the model below writes the reply from scratch, under the
+    #               rules in `reply::validate`.
+    #
+    # canned is the default the setup wizard offers; generated is what this
+    # file shipped with before, so it stays the default here.
+    wording: generated
+
+    # The drafting model, when `wording: generated`. Speaks the
+    # OpenAI-compatible chat API, so Ollama, llama.cpp server, LM Studio,
+    # and vLLM all work as endpoints.
     # endpoint: http://localhost:11434/v1   # Ollama
     # model: qwen3:4b
     # api_key: ""                           # only if your sidecar wants one
@@ -98,3 +132,30 @@ pipeline:
     # Options: confirm, missing_info. Empty (the default) means every
     # draft waits for you.
     # auto_send: []
+
+  # Optional: a decision model — Jev, from TypeSafe, or anything answering
+  # the same contract, including a model you serve yourself. It writes
+  # nothing. It picks one of the answers eruser offers it, which is what
+  # makes it safe to point at a broker's email: the answer is a label from
+  # eruser's own list, so there is nothing for an instruction hidden in the
+  # email to hijack.
+  #
+  # The endpoint takes a host, a base URL, or the full path — the path is
+  # completed for you:
+  #   https://api.typesafe.ai    -> https://api.typesafe.ai/v1/systemone
+  #   http://localhost:8000/v1   -> http://localhost:8000/v1/systemone
+  #
+  # Jev itself runs on TypeSafe's machines. Anything answering
+  #   POST {"state": "...", "model": "...",
+  #         "questions": {"decision": {"type": "choice", ...}}}
+  # works by pointing this at it, so a model on your own machine is a
+  # matter of serving that shape and setting the endpoint.
+  decider:
+    enabled: false
+    # endpoint: https://api.typesafe.ai/v1/systemone
+    # model: jev-latest
+    # api_key: ""           # your TypeSafe key, if you use their endpoint
+    # timeout_sec: 20
+    # min_confidence: 0.6   # an answer below this is thrown away
+    # route: false          # let it choose which reply an email deserves
+    # classify: false       # let it file the replies the rules could not place

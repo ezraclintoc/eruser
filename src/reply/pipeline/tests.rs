@@ -82,10 +82,10 @@ async fn a_pending_reply_gets_a_draft_and_a_task() {
 
     let summary = draft_replies(
         &store,
-        &Scripted {
+        &Drafting::generated(&Scripted {
             answer: GOOD_REPLY.into(),
             name: "scripted",
-        },
+        }),
         &profile(),
         DEFAULT_USER_ID,
         50,
@@ -122,12 +122,24 @@ async fn a_second_run_does_not_duplicate_work() {
         name: "scripted",
     };
 
-    draft_replies(&store, &drafter, &profile(), DEFAULT_USER_ID, 50)
-        .await
-        .unwrap();
-    let summary = draft_replies(&store, &drafter, &profile(), DEFAULT_USER_ID, 50)
-        .await
-        .unwrap();
+    draft_replies(
+        &store,
+        &Drafting::generated(&drafter),
+        &profile(),
+        DEFAULT_USER_ID,
+        50,
+    )
+    .await
+    .unwrap();
+    let summary = draft_replies(
+        &store,
+        &Drafting::generated(&drafter),
+        &profile(),
+        DEFAULT_USER_ID,
+        50,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(summary.drafted, 0);
     assert_eq!(summary.already_answered, 1);
@@ -168,10 +180,10 @@ async fn replies_that_need_no_answer_are_not_drafted() {
 
     let summary = draft_replies(
         &store,
-        &Scripted {
+        &Drafting::generated(&Scripted {
             answer: GOOD_REPLY.into(),
             name: "scripted",
-        },
+        }),
         &profile(),
         DEFAULT_USER_ID,
         50,
@@ -193,10 +205,10 @@ async fn a_refused_draft_is_counted_and_skipped() {
 
     let summary = draft_replies(
         &store,
-        &Scripted {
+        &Drafting::generated(&Scripted {
             answer: "I will send my passport immediately.".into(),
             name: "scripted",
-        },
+        }),
         &profile(),
         DEFAULT_USER_ID,
         50,
@@ -222,9 +234,15 @@ async fn an_unreachable_drafter_is_a_log_line_not_an_error() {
     let store = store().await;
     store_pending_reply(&store, "acme", "Your removal request").await;
 
-    let summary = draft_replies(&store, &Unreachable, &profile(), DEFAULT_USER_ID, 50)
-        .await
-        .unwrap();
+    let summary = draft_replies(
+        &store,
+        &Drafting::generated(&Unreachable),
+        &profile(),
+        DEFAULT_USER_ID,
+        50,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(summary.drafted, 0);
     assert!(
@@ -247,10 +265,10 @@ async fn the_cap_limits_how_much_one_run_asks_for() {
 
     let summary = draft_replies(
         &store,
-        &Scripted {
+        &Drafting::generated(&Scripted {
             answer: GOOD_REPLY.into(),
             name: "scripted",
-        },
+        }),
         &profile(),
         DEFAULT_USER_ID,
         2,
@@ -276,4 +294,168 @@ async fn identity_verification_cannot_auto_send_even_when_whitelisted() {
     assert!(may_auto_send(ReplyType::Confirm, &whitelist));
     assert!(may_auto_send(ReplyType::MissingInfo, &whitelist));
     assert!(!may_auto_send(ReplyType::Confirm, &[]));
+}
+
+// -------------------------------------------------------------------
+// The pre-written replies
+// -------------------------------------------------------------------
+
+/// A decider that answers from a script: the label it wants when that label
+/// was offered, and otherwise the first option. That is the shape of a real
+/// answer — something the caller offered, or something unusable.
+struct Fixed {
+    answer: &'static str,
+    confidence: f32,
+}
+
+#[async_trait::async_trait]
+impl Decider for Fixed {
+    async fn choose(
+        &self,
+        _state: &str,
+        question: &crate::decision::Choice,
+    ) -> Result<crate::decision::Decision, crate::decision::Error> {
+        let choice = if question.offers(self.answer) {
+            self.answer
+        } else {
+            question.options[0].label.as_str()
+        };
+
+        Ok(crate::decision::Decision {
+            choice: choice.to_string(),
+            confidence: self.confidence,
+            probabilities: Default::default(),
+            model: "stub-1".to_string(),
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "stub"
+    }
+}
+
+/// The settings for a run that uses the shipped wording.
+fn canned<'a>(decider: Option<&'a dyn Decider>, route: bool) -> Drafting<'a> {
+    Drafting {
+        drafter: None,
+        decider,
+        wording: Wording::Canned,
+        min_confidence: 0.6,
+        route,
+    }
+}
+
+/// The shipped wording is a complete answer on its own: no model anywhere,
+/// and a reply still lands on the task list.
+#[tokio::test]
+async fn the_shipped_wording_needs_no_model_at_all() {
+    let store = store().await;
+    store_pending_reply(&store, "acme", "Your removal request").await;
+
+    let summary = draft_replies(
+        &store,
+        &canned(None, false),
+        &profile(),
+        DEFAULT_USER_ID,
+        50,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.drafted, 1);
+
+    let drafts = store.pending_drafts(DEFAULT_USER_ID).await.unwrap();
+    assert_eq!(drafts.len(), 1);
+    assert_eq!(drafts[0].model, "canned:provide_details");
+    // Rendered against the person's own details, not left as a template.
+    assert!(drafts[0].body.contains("Jane Doe"), "{}", drafts[0].body);
+    assert!(!drafts[0].body.contains("{{"), "{}", drafts[0].body);
+}
+
+/// The model picks which pre-written reply to use — and nothing it says can
+/// reach the email, because the words are eruser's own either way.
+#[tokio::test]
+async fn the_model_only_names_the_reply_it_wants() {
+    let store = store().await;
+    store_pending_reply(&store, "acme", "Your removal request").await;
+
+    let decider = Fixed {
+        answer: "ask_what_is_missing",
+        confidence: 0.9,
+    };
+
+    let summary = draft_replies(
+        &store,
+        &canned(Some(&decider), false),
+        &profile(),
+        DEFAULT_USER_ID,
+        50,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.drafted, 1);
+    let drafts = store.pending_drafts(DEFAULT_USER_ID).await.unwrap();
+    assert_eq!(drafts[0].model, "canned:ask_what_is_missing");
+}
+
+/// A route the pattern table cannot produce: a broker asking for a reply by
+/// email, as opposed to a link to click.
+#[tokio::test]
+async fn a_decider_can_route_to_a_reply_the_rules_would_not_draft() {
+    let store = store().await;
+    store_pending_reply(&store, "acme", "Your removal request").await;
+
+    let decider = Fixed {
+        answer: "confirm",
+        confidence: 0.9,
+    };
+
+    let summary = draft_replies(
+        &store,
+        &canned(Some(&decider), true),
+        &profile(),
+        DEFAULT_USER_ID,
+        50,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.drafted, 1);
+    let drafts = store.pending_drafts(DEFAULT_USER_ID).await.unwrap();
+    assert_eq!(drafts[0].reply_type, ReplyType::Confirm);
+    assert_eq!(drafts[0].model, "canned:confirm_stands");
+}
+
+/// A model that says the email needs no answer leaves it alone, even where
+/// the rule table would have drafted one. Nothing is lost: the reply is
+/// still in history and still on the task list for a person.
+#[tokio::test]
+async fn a_decider_may_decline_to_answer_at_all() {
+    let store = store().await;
+    store_pending_reply(&store, "acme", "Your removal request").await;
+
+    let decider = Fixed {
+        answer: "none",
+        confidence: 0.9,
+    };
+
+    let summary = draft_replies(
+        &store,
+        &canned(Some(&decider), true),
+        &profile(),
+        DEFAULT_USER_ID,
+        50,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.drafted, 0);
+    assert!(
+        store
+            .pending_drafts(DEFAULT_USER_ID)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

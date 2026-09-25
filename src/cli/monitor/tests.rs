@@ -168,6 +168,38 @@ fn a_scan_with_nothing_outstanding_asks_nothing_of_you() {
     assert!(!out.contains("need a look"));
 }
 
+/// The classification pass runs inside a scan, so it says nothing when it
+/// was given nothing.
+#[test]
+fn nothing_unplaced_says_nothing() {
+    assert!(format_classify(&scan::ClassifySummary::default()).is_empty());
+}
+
+#[test]
+fn filing_replies_reports_what_moved_and_what_did_not() {
+    let filed = format_classify(&scan::ClassifySummary {
+        considered: 3,
+        filed: 3,
+        unsure: 0,
+    });
+    assert!(filed.contains("Filed 3 replies"), "{filed}");
+
+    let one = format_classify(&scan::ClassifySummary {
+        considered: 1,
+        filed: 1,
+        unsure: 0,
+    });
+    assert!(one.contains("Filed 1 reply "), "{one}");
+
+    let left = format_classify(&scan::ClassifySummary {
+        considered: 2,
+        filed: 0,
+        unsure: 2,
+    });
+    assert!(left.contains("2 replies still need you"), "{left}");
+    assert!(!left.contains("Filed"), "{left}");
+}
+
 #[test]
 fn reclassifying_reports_how_much_moved() {
     assert!(format_reclassify(0).contains("Nothing changed"));

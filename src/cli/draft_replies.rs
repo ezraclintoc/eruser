@@ -30,34 +30,69 @@ pub async fn run_standalone(paths: &Paths, quiet: bool) -> Result<(), Error> {
     result
 }
 
+/// What to say when the whole pipeline is switched off.
+const NOT_SET_UP: &str = "Reply drafting is not set up.\n\n\
+Add an `ai:` section to your config with `enabled: true`, and say who writes the \
+reply — the shipped wording, or a model you run:\n\n  \
+ai:\n  \
+enabled: true\n  \
+wording: canned          # use the replies eruser ships\n\n  \
+or\n\n  \
+ai:\n  \
+enabled: true\n  \
+endpoint: http://localhost:11434/v1\n  \
+model: qwen3:4b\n";
+
+/// What to say when the wording is meant to be generated but nothing can
+/// generate it.
+const NO_DRAFTER: &str = "Drafting is enabled with `wording: generated`, but no \
+drafting model is configured.\n\nEither set `wording: canned` to use the replies \
+eruser ships, or give the `ai:` section an `endpoint` and a `model`:\n\n  \
+ai:\n  \
+endpoint: http://localhost:11434/v1\n  \
+model: qwen3:4b\n";
+
 async fn run_with(store: &Store, paths: &Paths, quiet: bool) -> Result<(), Error> {
     let pipeline = paths.pipeline_settings();
-    let Some(drafter) = crate::reply::from_config(&pipeline.ai) else {
+
+    // One master switch: the reply pipeline does nothing at all until it is
+    // switched on. After that, `wording` decides who writes — and the
+    // pre-written replies need no model anywhere.
+    if !pipeline.ai.enabled {
         if !quiet {
-            println!(
-                "Reply drafting is not set up.\n\nAdd an `ai:` section to your config with \
-                 `enabled: true`, an `endpoint` and a `model`:\n\n  \
-                 ai:\n    \
-                 enabled: true\n    \
-                 endpoint: http://localhost:11434/v1\n    \
-                 model: qwen3:4b\n"
-            );
+            print!("{NOT_SET_UP}");
         }
         return Ok(());
-    };
+    }
+
+    let drafter = crate::reply::from_config(&pipeline.ai);
+    if pipeline.ai.wording == crate::config::Wording::Generated && drafter.is_none() {
+        if !quiet {
+            print!("{NO_DRAFTER}");
+        }
+        return Ok(());
+    }
+
+    let decider = crate::decision::from_config(&pipeline.decider);
+    let settings = pipeline::Drafting::from_config(
+        &pipeline.ai,
+        &pipeline.decider,
+        drafter.as_deref(),
+        decider.as_deref(),
+    );
 
     let config = paths
         .settings_for(store, crate::history::DEFAULT_USER_ID)
         .await?;
 
     if !quiet {
-        println!("Drafting replies with {}…", pipeline.ai.model);
+        println!("{}", banner(&pipeline.ai, drafter.is_some()));
         println!();
     }
 
     let summary = pipeline::draft_replies(
         store,
-        drafter.as_ref(),
+        &settings,
         &config.profile,
         crate::history::DEFAULT_USER_ID,
         pipeline.ai.max_drafts_per_run,
@@ -67,6 +102,19 @@ async fn run_with(store: &Store, paths: &Paths, quiet: bool) -> Result<(), Error
 
     print!("{}", format_summary(&summary, quiet));
     Ok(())
+}
+
+/// The opening line: what is producing the wording this run.
+fn banner(ai: &crate::config::AiConfig, has_drafter: bool) -> String {
+    match ai.wording {
+        crate::config::Wording::Canned => {
+            "Drafting replies from the replies eruser ships…".to_string()
+        }
+        crate::config::Wording::Generated if has_drafter => {
+            format!("Drafting replies with {}…", ai.model)
+        }
+        crate::config::Wording::Generated => "Drafting replies…".to_string(),
+    }
 }
 
 /// Render the run's outcome. Pure, so the wording is testable.

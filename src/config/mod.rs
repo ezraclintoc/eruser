@@ -14,6 +14,10 @@ pub const DEFAULT_RATE_LIMIT_MS: u64 = 2000;
 pub const DEFAULT_TEMPLATE: &str = "generic";
 pub const DEFAULT_BROWSER_TIMEOUT_SECS: u64 = 30;
 
+/// A decision is a single closed question, so it is expected back faster
+/// than a drafted paragraph is.
+pub const DEFAULT_DECIDER_TIMEOUT_SECS: u64 = 20;
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -205,6 +209,79 @@ pub struct Pipeline {
     /// Optional drafting model, writing replies a person then sends.
     #[serde(default)]
     pub ai: AiConfig,
+    /// Optional decision model, choosing between answers eruser gives it.
+    #[serde(default)]
+    pub decider: DeciderConfig,
+}
+
+/// A System One decision model — Jev, or anything speaking its contract.
+///
+/// The same shape as the solver and the drafter: opt-in, sidecar, off by
+/// default, and every failure path leaves the work with the rules that ran
+/// before this existed. Unlike the drafter it writes nothing. It picks one
+/// of the labels eruser hands it, which is why it can be asked the questions
+/// the code used to hardcode, and why an answer that was never on the list
+/// is a failure rather than a surprise.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeciderConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Where it answers. A bare host, a base URL, and the full
+    /// `/v1/systemone` path all work; the path is completed for you.
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub model: String,
+    /// Optional, for the hosted API or a sidecar behind a token.
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_decider_timeout")]
+    pub timeout_sec: u64,
+    /// Below this, an answer is thrown away and the rules stand.
+    #[serde(default = "default_min_confidence")]
+    pub min_confidence: f32,
+    /// Let it choose which reply a broker's email deserves, instead of the
+    /// built-in rule table.
+    #[serde(default)]
+    pub route: bool,
+    /// Let it file the replies the pattern rules could not place.
+    #[serde(default)]
+    pub classify: bool,
+}
+
+fn default_decider_timeout() -> u64 {
+    DEFAULT_DECIDER_TIMEOUT_SECS
+}
+
+fn default_min_confidence() -> f32 {
+    crate::decision::DEFAULT_MIN_CONFIDENCE
+}
+
+impl Default for DeciderConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: String::new(),
+            model: String::new(),
+            api_key: String::new(),
+            timeout_sec: DEFAULT_DECIDER_TIMEOUT_SECS,
+            min_confidence: crate::decision::DEFAULT_MIN_CONFIDENCE,
+            route: false,
+            classify: false,
+        }
+    }
+}
+
+/// Where the words in a drafted reply come from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Wording {
+    /// A model writes the reply, under the rules in `reply::validate`.
+    #[default]
+    Generated,
+    /// The pre-written reply that fits best is picked, and goes out as
+    /// written once the profile's facts are filled in.
+    Canned,
 }
 
 /// A captcha solver the user runs themselves, spoken to over HTTP.
@@ -225,6 +302,34 @@ pub struct CaptchaSolverConfig {
     pub token: String,
     #[serde(default = "default_solver_timeout")]
     pub timeout_sec: u64,
+    /// Solvers to try, in order, for the kinds of challenge they name.
+    ///
+    /// `url` and `token` above are the shorthand for a single solver that is
+    /// asked about every kind; when this list is not empty it is used
+    /// instead, so setup cannot end up half in one form and half in the
+    /// other.
+    #[serde(default)]
+    pub solvers: Vec<SolverEntry>,
+}
+
+/// One solver sidecar, and the challenges it is asked about.
+///
+/// Different kinds of challenge often need different sidecars — an image
+/// solver for the picture grids, a token service for the invisible ones —
+/// so each entry may name one kind. Leaving the kind out means the solver is
+/// asked about everything, which is what a sidecar that handles several
+/// wants, and what the shorthand `url` does.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SolverEntry {
+    /// `hcaptcha`, `recaptcha_v2`, `cloudflare_turnstile`, and so on. Empty
+    /// means any kind.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub url: String,
+    /// Optional shared secret, sent as a bearer token.
+    #[serde(default)]
+    pub token: String,
 }
 
 fn default_solver_timeout() -> u64 {
@@ -248,6 +353,7 @@ impl Default for Pipeline {
             browser_timeout_sec: DEFAULT_BROWSER_TIMEOUT_SECS,
             captcha_solver: CaptchaSolverConfig::default(),
             ai: AiConfig::default(),
+            decider: DeciderConfig::default(),
         }
     }
 }
@@ -282,6 +388,9 @@ pub struct AiConfig {
     /// hammer the sidecar with a hundred prompts.
     #[serde(default = "default_max_drafts")]
     pub max_drafts_per_run: u32,
+    /// Whether a model writes the reply or the shipped wording is used.
+    #[serde(default)]
+    pub wording: Wording,
 }
 
 fn default_ai_timeout() -> u64 {

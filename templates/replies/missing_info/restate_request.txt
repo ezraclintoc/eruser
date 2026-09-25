@@ -1,0 +1,19 @@
+Hello {{ broker_name }},
+
+Thank you for your reply. Everything needed to find my record was in my original request, and nothing about my details has changed since:
+
+{% if full_name %}Name: {{ full_name }}
+{% endif %}{% if email %}Email: {{ email }}
+{% endif %}{% if address %}Address: {{ address }}
+{% endif %}{% if city %}City: {{ city }}
+{% endif %}{% if state %}State: {{ state }}
+{% endif %}{% if zip_code %}Postal code: {{ zip_code }}
+{% endif %}{% if country %}Country: {{ country }}
+{% endif %}{% if phone %}Phone: {{ phone }}
+{% endif %}
+My request was for the personal information you hold about me to be deleted, and for it not to be sold or shared. That request stands and I have not withdrawn it. Please finish it within the period the privacy law that applies to me allows.
+
+If a specific detail is genuinely missing, name it and I will confirm it rather than sending you the same list again.
+
+Regards,
+{{ full_name }}

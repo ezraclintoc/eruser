@@ -1,0 +1,16 @@
+Hello {{ broker_name }},
+
+Thank you for your reply.
+
+You have asked me to verify my identity as part of my data removal request. Sending a copy of an identity document to an organisation I am asking to delete my data is not something I am prepared to do as a matter of course, and the privacy law that applies to me does not require it.
+
+Please tell me whether you can verify the request in another way. In my experience that is usually one of:
+
+- confirming details already held on my record, such as {% if email %}the email address this request came from{% else %}the address this request came from{% endif %};
+- a signed request sent from the address the request came from;
+- a short call or message to a contact detail you already hold for me.
+
+If none of those is acceptable, tell me what the legal basis is for requiring a document, and I will consider what to do next.
+
+Regards,
+{{ full_name }}

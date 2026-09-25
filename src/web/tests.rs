@@ -916,6 +916,9 @@ async fn stored_replies_can_be_reclassified_without_a_mailbox() {
     assert_eq!(response.status(), StatusCode::OK);
     let json: serde_json::Value = serde_json::from_str(&body_of(response).await).unwrap();
     assert_eq!(json["reclassified"], 1);
+    // No decision model is configured in this instance, so nothing is filed
+    // by one — the pass reports zero rather than failing.
+    assert_eq!(json["filed"], 0);
 
     let stored = state
         .store

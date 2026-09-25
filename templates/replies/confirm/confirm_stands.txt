@@ -1,0 +1,12 @@
+Hello {{ broker_name }},
+
+Thank you for your reply.
+
+I am writing back as you asked, to confirm that my request stands. Please delete the personal information you hold about me, and stop selling or sharing it.
+
+This is the same request I made in my previous email. I have not withdrawn it and nothing about it has changed.
+
+Please let me know when the deletion is complete.
+
+Regards,
+{{ full_name }}

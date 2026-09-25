@@ -65,27 +65,11 @@ eruser users           manage who can sign in to the web interface
 eruser serve           do all of it in a browser instead
 ```
 
-Past the port, the fork has diverged. The web interface asks for a password and holds more than one person, each with their own details, history and mailboxes; a household shares one instance without sharing an inbox. You can register several sending accounts, so a run is not capped by one provider's daily limit — it rolls over to the next mailbox when one is spent, and an account can be marked as the family's if everyone should be able to send through it. The request letters themselves are editable in the browser, stored as overrides, and revert to the shipped wording whenever you want them back.
-
-Upgrading from the Go version keeps everything: the existing database is adopted, `config.yaml` is imported once, and the first account you create claims the history that is already there.
-
-The initial Rust port was produced by AI; from here on out, development is done by humans. Treat that as an invitation — it needs real eyes on it, and bug reports and PRs are the fastest way to make it solid.
-
-The port turned up eleven bugs in the original along the way, from a classifier that filed the same reply differently on different runs to a setup wizard that silently lost every answer you typed. [PROGRESS.md](PROGRESS.md) lists them, and each has a test so it cannot come back.
-
-Install instructions are coming. For now, this is a build-from-source project.
-
-## Why Rust
-
-Honestly? Because I like writing Rust more. There's nothing wrong with the Go original — it works, and this fork exists because of it, not in spite of it.
-
-The usual arguments do apply — memory safety, a single static binary, errors you have to handle before it compiles — and they're genuinely nice to have in something that holds your home address and an email password. But they're the reasons it's a good language to keep maintaining this in, not the reason the rewrite happened. Preference came first.
-
 ## Roadmap
 
 - **Scheduled runs** — optional automatic re-send every six months, since brokers re-list you
-- **AI response pipeline** — smarter automated handling of broker replies. A start has landed: an optional local drafting model writes replies to the brokers that ask for one, every draft waits on the task list for you to read and send, and identity requests are never answered by a machine alone
-- **Automatic CAPTCHA solving** — for the opt-out forms that demand it. A start has landed: an optional solver you run yourself gets a go before a challenge is left to you, but its success is only believed when the challenge has actually left the page — anything else queues the form for a human, as before
+- **AI response pipeline** — smarter automated handling of broker replies. Two parts have landed: the replies brokers ask for now ship written, so one can go out without generating anything, and an optional decision model — Jev, or anything answering its contract on your own machine — can choose which reply an email deserves and which of the shipped replies fits. It writes nothing, every draft waits on the task list for you to read and send, and identity requests are never answered by a machine alone
+- **Automatic CAPTCHA solving** — for the opt-out forms that demand it. A start has landed: solvers you run yourself get a go before a challenge is left to you, one per kind of challenge if you want them, with a failure handing over to the next. A solver's success is only believed when the challenge has actually left the page — anything else queues the form for a human, as before
 - **Better guidance** — clearer instructions for the steps that still need a human
 
 ## Contributing

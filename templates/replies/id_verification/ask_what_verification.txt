@@ -1,0 +1,14 @@
+Hello {{ broker_name }},
+
+Thank you for your reply about my data removal request.
+
+Your message asks me to verify my identity, but it does not say what that involves. Before I decide what to do, please tell me:
+
+- exactly what you need in order to verify that this request is mine, and why it is necessary;
+- whether there is a way to do it that does not involve sending a copy of an identity document;
+- how anything I provide would be stored, how long it would be kept, and who would have access to it.
+
+I am not refusing to confirm who I am. I am asking what is genuinely required, so that I disclose no more than that, and I will respond once I know.
+
+Regards,
+{{ full_name }}

@@ -1,0 +1,18 @@
+Hello {{ broker_name }},
+
+Thank you for your reply. I am writing back as you asked, to confirm that my request stands, and to restate the details that identify my record:
+
+{% if full_name %}Name: {{ full_name }}
+{% endif %}{% if email %}Email: {{ email }}
+{% endif %}{% if address %}Address: {{ address }}
+{% endif %}{% if city %}City: {{ city }}
+{% endif %}{% if state %}State: {{ state }}
+{% endif %}{% if zip_code %}Postal code: {{ zip_code }}
+{% endif %}{% if country %}Country: {{ country }}
+{% endif %}
+Please delete the personal information you hold about me and stop selling or sharing it, as the privacy law that applies to me requires. Nothing about this request has changed, and I have not withdrawn it.
+
+Please let me know when the deletion is complete.
+
+Regards,
+{{ full_name }}

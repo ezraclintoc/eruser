@@ -116,6 +116,80 @@ impl SidecarSolver {
     }
 }
 
+/// Several solvers, each asked about the kinds of challenge it names.
+///
+/// One sidecar often is not enough: the picture grids need a vision model,
+/// the invisible challenges need a token service, and the person setting
+/// this up may want one of each. Entries are tried in the order they are
+/// configured, and the first one that reports a solve ends the attempt —
+/// though eruser still re-reads the page before believing any of them.
+///
+/// A solver that is down does not end the attempt either; the next one is
+/// asked. A challenge every entry declines is reported as unavailable for
+/// that kind, which leaves the form with a person exactly as before.
+pub struct PoolSolver {
+    /// Kind, and the solver to ask about it. An empty kind is asked about
+    /// everything.
+    solvers: Vec<(String, Arc<dyn CaptchaSolver>)>,
+}
+
+impl PoolSolver {
+    pub fn new(solvers: Vec<(String, Arc<dyn CaptchaSolver>)>) -> Self {
+        Self { solvers }
+    }
+}
+
+/// Which of two failed attempts to report.
+///
+/// A solver that looked at the challenge and could not clear it is more
+/// useful to read about than one that was not running, so a failure is not
+/// displaced by an unreachable sidecar later in the list.
+fn more_informative(current: &SolveOutcome, next: SolveOutcome) -> SolveOutcome {
+    match current {
+        SolveOutcome::Failed(_) => current.clone(),
+        _ => next,
+    }
+}
+
+#[async_trait::async_trait]
+impl CaptchaSolver for PoolSolver {
+    async fn solve(&self, challenge: &Captcha, page_url: &str) -> SolveOutcome {
+        let kind = challenge.kind.as_str();
+        let mut outcome: Option<SolveOutcome> = None;
+
+        for (wanted, solver) in &self.solvers {
+            if !wanted.is_empty() && wanted != kind {
+                continue;
+            }
+
+            tracing::info!(
+                solver = solver.name(),
+                challenge = kind,
+                "asking a solver to clear the challenge"
+            );
+
+            match solver.solve(challenge, page_url).await {
+                // Claiming success, not succeeding; the page decides.
+                SolveOutcome::Solved => return SolveOutcome::Solved,
+                other => {
+                    outcome = Some(match &outcome {
+                        Some(current) => more_informative(current, other),
+                        None => other,
+                    });
+                }
+            }
+        }
+
+        outcome.unwrap_or_else(|| {
+            SolveOutcome::Unavailable(format!("no solver is configured for a `{kind}` challenge"))
+        })
+    }
+
+    fn name(&self) -> &'static str {
+        "pool"
+    }
+}
+
 /// Build the solver the settings describe. `None` means every challenge is
 /// left for a person, which is the default and always the fallback.
 ///
@@ -127,20 +201,60 @@ pub fn from_config(config: &crate::config::CaptchaSolverConfig) -> Option<Arc<dy
         return None;
     }
 
-    if config.url.trim().is_empty() {
+    let timeout = Duration::from_secs(config.timeout_sec.max(1));
+
+    // The list is the full form; `url`/`token` on the section are the
+    // shorthand for one solver that is asked about every kind. A config that
+    // has both is a mistake worth saying out loud, and the list wins because
+    // it is the one that can express more.
+    let entries: Vec<(String, String, String)> = if config.solvers.is_empty() {
+        vec![(
+            String::new(),
+            config.url.trim().to_string(),
+            config.token.trim().to_string(),
+        )]
+    } else {
+        if !config.url.trim().is_empty() {
+            tracing::warn!(
+                "captcha_solver has both `url` and `solvers`; using the list and ignoring `url`"
+            );
+        }
+        config
+            .solvers
+            .iter()
+            .map(|entry| {
+                (
+                    entry.kind.trim().to_string(),
+                    entry.url.trim().to_string(),
+                    entry.token.trim().to_string(),
+                )
+            })
+            .collect()
+    };
+
+    // An entry with no url is a half-written line; it is skipped rather than
+    // turned into a request to nowhere. If that leaves nothing, say so —
+    // challenges then go to a person, which is where they would have gone
+    // with no solver configured at all.
+    let solvers: Vec<(String, Arc<dyn CaptchaSolver>)> = entries
+        .into_iter()
+        .filter(|(_, url, _)| !url.is_empty())
+        .map(|(wanted, url, token)| {
+            let token = (!token.is_empty()).then_some(token);
+            let solver: Arc<dyn CaptchaSolver> = Arc::new(SidecarSolver::new(url, token, timeout));
+            (wanted, solver)
+        })
+        .collect();
+
+    if solvers.is_empty() {
         tracing::warn!(
-            "captcha_solver is enabled but no url is set; challenges will be left for a person"
+            "captcha_solver is enabled but no solver url is set; \
+             challenges will be left for a person"
         );
         return None;
     }
 
-    let token = (!config.token.trim().is_empty()).then(|| config.token.clone());
-    let solver = SidecarSolver::new(
-        config.url.trim().to_string(),
-        token,
-        Duration::from_secs(config.timeout_sec.max(1)),
-    );
-    Some(Arc::new(solver))
+    Some(Arc::new(PoolSolver::new(solvers)))
 }
 
 #[async_trait::async_trait]
